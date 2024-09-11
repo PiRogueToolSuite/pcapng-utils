@@ -25,8 +25,16 @@ class HttpRequestResponse(ABC):
 
     @property
     @abstractmethod
-    def raw_headers(self) -> list[str]:
+    def _raw_headers(self) -> str | list[str]:
         pass
+
+    @property
+    def raw_headers(self) -> Sequence[str]:
+        header_or_list_headers = self._raw_headers
+        if not isinstance(header_or_list_headers, list):
+            assert isinstance(header_or_list_headers, str), header_or_list_headers
+            header_or_list_headers = [header_or_list_headers]
+        return header_or_list_headers
 
     @property
     def header_length(self) -> int:
@@ -60,7 +68,9 @@ class HttpRequestResponse(ABC):
         processed_headers = []
         for header in self.raw_headers:
             assert header.isascii(), header
-            key, value = header.split(': ', 1)
+            key_value = header.split(':', 1) # on rare occasions there is no space after :
+            assert len(key_value) == 2, key_value
+            key, value = key_value
             processed_headers.append({
                 'name': key.strip(),
                 'value': value.replace('\r\n', '').strip()
@@ -74,7 +84,7 @@ class HttpRequest(HttpRequestResponse):
     Class to represent an HTTP request.
     """
     @property
-    def raw_headers(self) -> list[str]:
+    def _raw_headers(self) -> str | list[str]:
         return self.http_layer.get('http.request.line', [])
 
     @cached_property
@@ -144,7 +154,7 @@ class HttpResponse(HttpRequestResponse):
     Class to represent an HTTP response.
     """
     @property
-    def raw_headers(self) -> list[str]:
+    def _raw_headers(self) -> str | list[str]:
         return self.http_layer.get('http.response.line', [])
 
     @cached_property

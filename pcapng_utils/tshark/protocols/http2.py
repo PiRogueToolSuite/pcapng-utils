@@ -96,8 +96,9 @@ class Http2RequestResponse:
         declared_size = sum(int(s.raw_http2_substream.get('http2.length', 0)) for s in self.data_streams)
         if declared_size != self.data.size:
             warnings.warn(
-                f"{self}\nBody length mismatch: "
+                f"Content length mismatch: "
                 f"declared ({declared_size}) != computed ({self.data.size})"
+                f"\n{self}"
             )
         return declared_size
 
