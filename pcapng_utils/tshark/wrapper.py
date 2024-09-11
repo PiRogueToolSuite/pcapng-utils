@@ -50,7 +50,9 @@ class Tshark:
 
         Raises:
             subprocess.CalledProcessError: If the tshark command fails.
+
+        Note that no HTTP3 traffic is expected since it is rejected by Pirogue.
         """
-        cmd = f'{self.tshark_path} -2 -r {self.pcapng_file} -T json --no-duplicate-keys -Y "http || http2"'
+        cmd = f'{self.tshark_path} -2 -r {self.pcapng_file} -x -T json --no-duplicate-keys -Y "http || http2"'
         cmd_output = subprocess.check_output(cmd, shell=True)
         self.traffic = json.loads(cmd_output)

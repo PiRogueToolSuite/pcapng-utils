@@ -23,21 +23,24 @@ cd <repository_directory>
 pip install -r requirements.txt
 ```
 
-## Usage 
+## Usage
+
+Prior to using this converter, please have a look at [documentation on how to convert .pcap to .pcapng](./pcapng_utils/tshark/wrapper.py#L28)
+
+### Shell
+
+Run `./pcapng_to_har.py [-h]` in your shell (with your Python virtual environment activated)
+
+### Python
+
 ```python
-from pathlib import Path
-
-from pcapng_utils.tshark.traffic import NetworkTrafficDump
-from pcapng_utils.tshark.wrapper import Tshark
-
-tshark_path = '/Applications/Wireshark.app/Contents/MacOS/tshark'
-input_file = Path('input.pcapng')
-# Load the traffic from the PCAPNG file
-tshark_wrapper = Tshark(pcapng_file=input_file, tshark_path=tshark_path)
-tshark_wrapper.load_traffic()
-# Parse the traffic
-traffic = NetworkTrafficDump(tshark_wrapper.traffic)
-traffic.parse_traffic()
-# Save the HAR file
-traffic.save_har(Path('output.har'))
+from pcapng_to_har import pcapng_to_har
+pcapng_to_har(
+    input_file: Path,
+    output_file: Path,
+    *,
+    tshark_path: Path,
+    overwrite: bool = False,
+    **json_dump_kws: Any  # e.g. indent=4
+)
 ```
