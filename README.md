@@ -2,16 +2,17 @@
 
 ## Overview
 
-This project is a Python-based tool for converting PCAPNG files to HAR files. It supports both HTTP/1.1 and HTTP/2 protocols.
+This project is a Python-based tool for converting PCAPNG files to HAR files.
+It supports both HTTP/1.1 and HTTP/2 protocols.
 
 ## Requirements
 
-- Python 3.6+
-- `tshark` (part of the Wireshark suite)
+- Python 3.11+
+- `tshark` (part of the Wireshark suite; tested on version >= 4.0)
 
 ## Installation
 
-1. Install Python 3.6 or higher.
+1. Install Python 3.11 or higher.
 2. Install `tshark` from the Wireshark suite.
 3. Clone this repository:
 ```sh
