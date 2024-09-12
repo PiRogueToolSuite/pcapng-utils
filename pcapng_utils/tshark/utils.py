@@ -3,8 +3,7 @@ import binascii
 from dataclasses import dataclass
 from typing import Sequence, Mapping, Optional, Self, Any
 
-DictLayers = Mapping[str, Any]
-TsharkRaw = list[str | int]
+from .types import DictLayers, TsharkRaw
 
 
 def get_layers_mapping(traffic: Sequence[DictLayers]) -> Mapping[int, DictLayers]:

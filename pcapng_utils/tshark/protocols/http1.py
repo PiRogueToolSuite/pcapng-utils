@@ -6,7 +6,8 @@ from typing import Sequence, ClassVar, Any
 
 import pytz
 
-from pcapng_utils.tshark.utils import Payload, DictLayers, get_layers_mapping, get_tshark_bytes_from_raw
+from ..types import HarEntry, DictLayers
+from ..utils import Payload, get_layers_mapping, get_tshark_bytes_from_raw
 
 HTTP_METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'}
 
@@ -238,9 +239,11 @@ class HttpConversation:
         }
 
 
-class HttpTraffic:
+class Http1Traffic:
     """
-    Class to represent HTTP network traffic. This class is the entry point for parsing HTTP network traffic.
+    Class to represent HTTP1 network traffic.
+
+    This class is the entry point for parsing HTTP1 network traffic.
 
     The format of JSON data from tshark is as follows for a single HTTP request:
     - `GET /spi/v2/platforms/ HTTP/1.1\\r\\n`: Contains the HTTP method, URI, and version.
@@ -297,7 +300,7 @@ class HttpTraffic:
             response_layers = layers_mapping[int(http_layer['http.response_in'])]
             self.conversations.append(HttpConversation(request_layers, response_layers))
 
-    def get_har_entries(self) -> list[dict[str, Any]]:
+    def get_har_entries(self) -> list[HarEntry]:
         """
         Convert the HTTP network traffic to HTTP Archive (HAR) format.
         :return: the HTTP network traffic in HAR format

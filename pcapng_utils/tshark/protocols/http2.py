@@ -1,13 +1,12 @@
 import warnings
 from datetime import datetime
 from functools import cached_property
-from typing import Sequence, Mapping, ClassVar, Optional, Any
+from typing import Sequence, ClassVar, Optional, Any
 
 import pytz
 
-from pcapng_utils.tshark.utils import Payload, DictLayers, get_tshark_bytes_from_raw
-
-NameValueDict = Mapping[str, str]
+from ..types import HarEntry, DictLayers, NameValueDict
+from ..utils import Payload, get_tshark_bytes_from_raw
 
 
 class Http2Substream:
@@ -511,7 +510,7 @@ class Http2Traffic:
     def get_http2_streams(self):
         return list(self.stream_pairs.values())
 
-    def get_har_entries(self) -> list[dict[str, Any]]:
+    def get_har_entries(self) -> list[HarEntry]:
         """
         Convert the HTTP2 traffic to HTTP Archive (HAR) format.
 
