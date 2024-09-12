@@ -1,10 +1,10 @@
-import re
 import base64
 import binascii
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Sequence, Mapping, Optional, Self, Any
 
 DictLayers = Mapping[str, Any]
+TsharkRaw = list[str | int]
 
 
 def get_layers_mapping(traffic: Sequence[DictLayers]) -> Mapping[int, DictLayers]:
@@ -18,64 +18,54 @@ def get_layers_mapping(traffic: Sequence[DictLayers]) -> Mapping[int, DictLayers
     return mapping
 
 
-def _get_tshark_bytes_from_hex(s: str) -> Optional[bytes]:
-    if not s or not s.isascii():  # fail fast
-        return None
-    rx_with_colons = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2})*$")
-    rx_no_colons = re.compile(r"^([0-9a-f]{2})+$")  # from "_raw" fields produced with '-x' flag
-    is_tshark_hex = rx_with_colons.match(s) or rx_no_colons.match(s)
-    return binascii.unhexlify(s.replace(':', '')) if is_tshark_hex else None
+def get_tshark_bytes_from_raw(r: Optional[TsharkRaw]) -> bytes:
+    """Format of '*_raw' fields produced with '-x' flag: [hexa: str, *sizes: int]"""
+    if r is None:
+        return b''
+    assert isinstance(r, list) and len(r) == 5, r
+    hexa = r[0]
+    assert isinstance(hexa, str) and hexa.isascii(), hexa
+    return binascii.unhexlify(hexa)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Payload:
-    """Representation of either base64-encoded bytes or plain-text UTF8 string (useful for HAR export)."""
+    """Representation of either bytes, possibly representing UTF8 plain-text (useful for HAR export)."""
 
-    bytes_: bytes = field(default=b'', repr=False)
-    is_printable: bool = True
+    bytes_: bytes = b''
 
     @property
     def size(self) -> int:
         return len(self.bytes_)  # <!> len('€') == 1 != len('€'.encode()) == 3
 
-    @classmethod
-    def from_str(cls, s: str, *, encoding: str = "utf-8") -> Self:
-        """Constructor from string (UTF8 by default)."""
-        assert s.isprintable(), s
-        return cls(s.encode(encoding), True)
+    def __bool__(self) -> bool:
+        return bool(self.bytes_)
 
-    @classmethod
-    def from_bytes(cls, b: bytes) -> Self:
-        """Constructor from bytes."""
-        return cls(b, False)
+    def __repr__(self) -> str:
+        return f"Payload(size={self.size}) @ {id(self):0x}"
 
     @classmethod
     def concat(cls, *payloads: Self) -> Self:
         """Concatenate all payloads in order."""
         concat_bytes = b''.join(p.bytes_ for p in payloads)  # can't use `sum` here
-        return cls(concat_bytes, all(p.is_printable for p in payloads))
+        return cls(concat_bytes)
 
     @classmethod
-    def from_unsure_tshark_data(cls, data: str, *, encoding: str = "utf-8") -> Self:
-        """New payload from either plain-text printable string or HEX string in tshark format."""
-        data_bytes = _get_tshark_bytes_from_hex(data)
-        if data_bytes is None:
-            return cls.from_str(data, encoding=encoding)
-        else:
-            # try this in case these bytes represent a printable string
-            try:
-                return cls.from_str(data_bytes.decode(encoding), encoding=encoding)
-            except:
-                pass
-        return cls.from_bytes(data_bytes)
+    def from_tshark_raw(cls, data: Optional[TsharkRaw]) -> Self:
+        """New payload from special tshark '*_raw' field"""
+        return cls(get_tshark_bytes_from_raw(data))
 
     def to_har_dict(self) -> dict[str, Any]:
         """Export with HAR syntax."""
-        if self.is_printable:
+        try:
+            plain_txt = self.bytes_.decode()
+            assert plain_txt.isprintable()  # TODO? allow '\n'?
             return {
                 "size": self.size,
-                "text": self.bytes_.decode(),
+                "text": plain_txt,
             }
+        except:
+            pass
         return {
             "size": self.size,
             "text": base64.b64encode(self.bytes_).decode("ascii"),

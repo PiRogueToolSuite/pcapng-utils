@@ -2,13 +2,22 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import cached_property
 from dataclasses import dataclass
-from typing import Sequence, Optional, Any
+from typing import Sequence, ClassVar, Any
 
 import pytz
 
-from pcapng_utils.tshark.utils import Payload, DictLayers, get_layers_mapping
+from pcapng_utils.tshark.utils import Payload, DictLayers, get_layers_mapping, get_tshark_bytes_from_raw
 
 HTTP_METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'}
+
+
+def _get_raw_headers(http_layer: dict[str, Any], direction: str) -> list[bytes]:
+    raw_headers = http_layer.get(f"http.{direction}.line_raw")
+    if not raw_headers:
+        return []
+    if isinstance(http_layer[f"http.{direction}.line"], str):  # only 1 header (dirty structure)
+        raw_headers = [raw_headers]
+    return [get_tshark_bytes_from_raw(h) for h in raw_headers]
 
 
 @dataclass(frozen=True)
@@ -19,39 +28,30 @@ class HttpRequestResponse(ABC):
     """
     packet: DictLayers
 
+    FALLBACK_CONTENT_TYPE: ClassVar = 'application/octet-stream'
+
     @property
     def http_layer(self) -> dict[str, Any]:
         return self.packet['http']
 
     @property
     @abstractmethod
-    def _raw_headers(self) -> str | list[str]:
+    def raw_headers(self) -> Sequence[bytes]:
         pass
 
     @property
-    def raw_headers(self) -> Sequence[str]:
-        header_or_list_headers = self._raw_headers
-        if not isinstance(header_or_list_headers, list):
-            assert isinstance(header_or_list_headers, str), header_or_list_headers
-            header_or_list_headers = [header_or_list_headers]
-        return header_or_list_headers
-
-    @property
     def header_length(self) -> int:
-        return len(''.join(self.raw_headers))
+        return len(b''.join(self.raw_headers))
 
     @property
     def content_type(self) -> str:
-        return self.http_layer.get('http.content_type', '')
-
-    @property
-    def raw_hex_content(self) -> str:
-        # data is [hex_str, *sizes]
-        return self.http_layer.get('http.file_data_raw', [''])[0]
+        if not self.payload:
+            return ''
+        return self.http_layer.get('http.content_type', self.FALLBACK_CONTENT_TYPE)
 
     @cached_property
     def payload(self) -> Payload:
-        return Payload.from_unsure_tshark_data(self.raw_hex_content)
+        return Payload.from_tshark_raw(self.http_layer.get('http.file_data_raw'))
 
     @property
     def content_length(self) -> int:
@@ -67,13 +67,12 @@ class HttpRequestResponse(ABC):
         assert isinstance(self.raw_headers, list), self.raw_headers
         processed_headers = []
         for header in self.raw_headers:
-            assert header.isascii(), header
-            key_value = header.split(':', 1) # on rare occasions there is no space after :
+            key_value = header.decode().split(':', 1)  # on rare occasions there is no space after colon
             assert len(key_value) == 2, key_value
             key, value = key_value
             processed_headers.append({
                 'name': key.strip(),
-                'value': value.replace('\r\n', '').strip()
+                'value': value.strip(),
             })
         return processed_headers
 
@@ -84,21 +83,24 @@ class HttpRequest(HttpRequestResponse):
     Class to represent an HTTP request.
     """
     @property
-    def _raw_headers(self) -> str | list[str]:
-        return self.http_layer.get('http.request.line', [])
+    def raw_headers(self) -> list[bytes]:
+        return _get_raw_headers(self.http_layer, 'request')
 
     @cached_property
-    def method(self) -> Optional[str]:
+    def http_version_method(self) -> tuple[str, str]:
         """
-        Get the HTTP method from the packet data.
-        :return: the HTTP method
+        Get the HTTP version & method from the packet data.
+        :return: tuple with HTTP version & method
         """
-        for v in self.http_layer.values():
-            if isinstance(v, dict) and 'http.request.method' in v:
-                meth = v['http.request.method']
-                assert meth in HTTP_METHODS, meth
-                return meth
-        return None
+        for d in self.http_layer.values():
+            if not isinstance(d, dict) or 'http.request.version' not in d:
+                continue
+            version = d['http.request.version']
+            assert version.startswith('HTTP/1.'), version
+            meth = d['http.request.method']
+            assert meth in HTTP_METHODS, meth
+            return version, meth
+        return 'HTTP/1.1', ''
 
     @property
     def sending_duration(self):
@@ -109,11 +111,12 @@ class HttpRequest(HttpRequestResponse):
         Convert the HTTP request to HTTP Archive (HAR) format.
         :return: the HTTP request in HAR format
         """
+        http_version, method = self.http_version_method
         d = {
             'startedDateTime': self.started_date,
-            'method': self.method,
+            'method': method,
             'url': self.uri,
-            'httpVersion': 'HTTP/1.1',
+            'httpVersion': http_version,
             'headers': self.headers,
             'queryString': [], # TODO?
             'cookies': [], # TODO?
@@ -129,7 +132,7 @@ class HttpRequest(HttpRequestResponse):
 
     @property
     def uri(self) -> str:
-        return self.http_layer.get('http.request.full_uri', '')
+        return self.http_layer['http.request.full_uri']
 
     @property
     def src_host(self) -> str:
@@ -141,11 +144,11 @@ class HttpRequest(HttpRequestResponse):
 
     @property
     def src_ip(self) -> str:
-        return self.packet['ip'].get('ip.src', '')
+        return self.packet['ip']['ip.src']
 
     @property
     def dst_ip(self) -> str:
-        return self.packet['ip'].get('ip.dst', '')
+        return self.packet['ip']['ip.dst']
 
 
 @dataclass(frozen=True)
@@ -154,41 +157,34 @@ class HttpResponse(HttpRequestResponse):
     Class to represent an HTTP response.
     """
     @property
-    def _raw_headers(self) -> str | list[str]:
-        return self.http_layer.get('http.response.line', [])
+    def raw_headers(self) -> list[bytes]:
+        return _get_raw_headers(self.http_layer, 'response')
 
     @cached_property
-    def status_code_message(self) -> tuple[int, str]:
+    def http_version_status_code_message(self) -> tuple[str, int, str]:
         """
-        Parse the HTTP status line from the packet data.
-        :return: the HTTP status code and message
+        Retrieve the HTTP version & status code & message.
+        :return: tuple with HTTP version, status code and message
         """
-        line = ''
-        for k, _ in self.http_layer.items():
-            if k.startswith('HTTP/'):
-                line = k
-            elif k.startswith(' [truncated]'):
-                line = k.removeprefix(' [truncated]') + ' HTTP/1.1'
-            elif k.split(' ')[0] in HTTP_METHODS:
-                line = k
-        parts = line.split(' ', 2)
-        if len(parts) == 3:
-            status_code = int(parts[1].strip())
-            status_message = parts[2].removesuffix('\\r\\n')
-            return status_code, status_message
-        return 0, ''
+        for d in self.http_layer.values():
+            if not isinstance(d, dict) or 'http.response.version' not in d:
+                continue
+            version = d['http.response.version']
+            assert version.startswith('HTTP/1.'), version
+            return version, int(d['http.response.code']), d['http.response.code.desc']
+        return 'HTTP/1.1', 0, ''
 
     def to_har(self):
         """
         Convert the HTTP response to HTTP Archive (HAR) format.
         :return: the HTTP response in HAR format
         """
-        status_code, status_message = self.status_code_message
+        http_version, status_code, status_message = self.http_version_status_code_message
         return {
             'startedDateTime': self.started_date,
             'status': status_code,
             'statusText': status_message,
-            'httpVersion': 'HTTP/1.1',
+            'httpVersion': http_version,
             'headers': self.headers,
             'cookies': [],  # TODO?
             'headersSize': self.header_length,
@@ -290,7 +286,9 @@ class HttpTraffic:
 
         for request_layers in self.traffic:
             protocols = request_layers['frame']['frame.protocols'].split(':')
-            if 'http' not in protocols:
+            if 'http' not in protocols or 'http' not in request_layers:
+                # happens that both 'http' & 'http2' are in `protocols`
+                # but only 'http2' is in layers
                 continue
             http_layer = request_layers['http']
             if 'http.request' not in http_layer or 'http.response_in' not in http_layer:
