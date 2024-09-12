@@ -1,8 +1,11 @@
 import json
 import subprocess
 from pathlib import Path
+from dataclasses import dataclass
+from typing import Any
 
 
+@dataclass(frozen=True)
 class Tshark:
     """
     A class to interact with tshark for loading and parsing network traffic data from a PCAPNG file.
@@ -28,31 +31,35 @@ class Tshark:
     - Inject the TLS secrets: `editcap --inject-secrets tls,<keylog_file> <file.pcap> <output.pcapng>`
 
     Attributes:
-        pcapng_file (Path): The path to the pcapng file to be analyzed.
-        tshark_path (str): The path to the tshark executable.
-        frames (list): A list to store the frames extracted from the pcapng file.
-        request_response_pairs (list): A list to store the request-response pairs.
-        traffic (dict): The parsed network traffic data.
+        tshark_cmd (str): The path to the tshark executable.
     """
-    def __init__(self, pcapng_file: Path, tshark_path: str = 'tshark'):
-        self.pcapng_file = pcapng_file
-        self.tshark_path = tshark_path
-        self.frames = []
-        self.request_response_pairs = []
-        self.traffic = None
+    tshark_cmd: str = 'tshark'
 
-    def load_traffic(self):
+    def load_traffic(self, pcapng_file: Path) -> list[dict[str, Any]]:
         """
-        Loads network traffic data from a pcapng file using tshark.
+        Loads network traffic data from the provided pcapng file using tshark.
 
         This method runs the tshark command to read the pcapng file and parse the output as JSON.
-        The parsed traffic data is then stored in the `traffic` attribute.
+        The parsed traffic data is then returned.
 
         Raises:
             subprocess.CalledProcessError: If the tshark command fails.
 
         Note that no HTTP3 traffic is expected since it is rejected by Pirogue.
         """
-        cmd = f'{self.tshark_path} -2 -r {self.pcapng_file} -x -T json --no-duplicate-keys -Y "http || http2"'
-        cmd_output = subprocess.check_output(cmd, shell=True)
-        self.traffic = json.loads(cmd_output)
+        if not pcapng_file.exists():
+            raise FileNotFoundError(pcapng_file)
+        cmd = [
+            self.tshark_cmd,
+            '-2',  # two passes
+            '-r', pcapng_file.as_posix(),
+            '-x',  # output raw fields as well
+            '-T', 'json',
+            '--no-duplicate-keys',  # merge json keys
+            '-Y', 'http || http2',  # display filters
+            '-J', 'frame ip tcp http http2',  # do not export data of useless layers
+        ]
+        cmd = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if cmd.returncode != 0:
+            raise RuntimeError(cmd.stderr.decode())
+        return json.loads(cmd.stdout)

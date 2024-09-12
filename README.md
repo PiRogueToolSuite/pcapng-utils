@@ -35,12 +35,12 @@ Run `./pcapng_to_har.py [-h]` in your shell (with your Python virtual environmen
 ### Python
 
 ```python
-from pcapng_to_har import pcapng_to_har
+from pcapng_to_har import pcapng_to_har, Tshark
 pcapng_to_har(
-    input_file: Path,
-    output_file: Path,
+    input_file: Path | str,
+    output_file: Path | str | None = None,
     *,
-    tshark_path: Path,
+    tshark: Tshark | None = None,
     overwrite: bool = False,
     **json_dump_kws: Any  # e.g. indent=4
 )
