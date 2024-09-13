@@ -1,7 +1,7 @@
 import warnings
 from datetime import datetime
 from functools import cached_property
-from typing import Sequence, ClassVar, Optional, Any
+from typing import Sequence, Mapping, ClassVar, Optional, Any
 
 import pytz
 
@@ -97,14 +97,14 @@ class Http2RequestResponse:
     @property
     def body_length(self) -> int:
         """
-        <!> In Tshark < 4.2.0:
-        - we do not have `http2.body.*`
+        <!> This is number of compressed bytes (if any compression)
         - `http2.length` is also populated for header substreams
+        - we do NOT always have the `http2.body.fragments` -> `http2.body.reassembled.length`
         """
         if not self:
             return -1
         declared_size = sum(int(s.raw_http2_substream.get('http2.length', 0)) for s in self.data_streams)
-        if declared_size != self.data.size and not self.headers_map.get('content-encoding', ''):
+        if declared_size != self.data.size and self.headers_map.get('content-encoding', 'identity') == 'identity':
             warnings.warn(
                 f"Content length mismatch despite no compression: "
                 f"declared ({declared_size}) != computed ({self.data.size})"
@@ -154,7 +154,7 @@ class Http2Request(Http2RequestResponse):
         return next(iter(uris))
 
     def __str__(self):
-        return f'Request - {len(self.substreams)} substreams\n\tURI: {self.uri}\n\tHeaders: {self.headers}\n\tData: {self.data}'
+        return f'Request: {len(self.headers_streams)}h + {len(self.data_streams)}d substreams\n\tURI: {self.uri}\n\tHeaders: {self.headers_map}\n\tData: {self.data}'
 
 
 class Http2Response(Http2RequestResponse):
@@ -164,7 +164,7 @@ class Http2Response(Http2RequestResponse):
     <!> May be empty for convenience (response never received)
     """
     def __str__(self):
-        return f'Response - {len(self.substreams)} substreams\n\tHeaders: {self.headers}\n\tData: {self.data}'
+        return f'Response: {len(self.headers_streams)}h + {len(self.data_streams)}d substreams\n\tHeaders: {self.headers_map}\n\tData: {self.data}'
 
 
 class Http2Stream:
@@ -182,7 +182,7 @@ class Http2Stream:
      | Http2SubStream 7    | Response data (type: 0, flags: 0x1) - end of stream, contains reassembled data
      | (Http2SubStream 8   | Response trailers (type: 1))
      +--------------------------------------
-     Each HTTP2 steam is defined by a tuple (tcp stream, http2 stream) and contains both request and response objects.
+     Each HTTP2 stream is defined by a tuple (tcp stream, http2 stream) and contains both request and response objects.
     """
     def __init__(self, tcp_stream_id: int, http2_stream_id: int):
         """
@@ -246,19 +246,46 @@ class Http2Stream:
         }
 
     @staticmethod
-    def get_raw_data(raw_http2_substream: dict[str, Any]) -> Payload:
+    def _get_raw_data_one_substream(raw_http2_substream: Mapping[str, Any]) -> Payload:
         """
-        Find the data in the substream.
-
-        :param substream: the substream to be analyzed
-        :return: the raw reassembled data (in hex format) if it exists, otherwise an empty string
-
-        <!> http2.body.fragments -> http2.body.reassembled.data not available in tshark < 4.2.0
+        Notes:
+        - when dealing with a reassembled data substream, `http2.data.data_raw` MAY not contain all data
+        - if the payload was compressed, tshark decompresses ALL data for us(even if data is reassembled)
+        under `Content-encoded entity body ...` -> `http2.data.data_raw` key, so we check it first
         """
         for k, v in raw_http2_substream.items():
-            if k.lower().startswith('content-encoded') and 'http2.data.data_raw' in v:
-                return Payload.from_tshark_raw(v['http2.data.data_raw'])
+            if k.lower().startswith('content-encoded entity body '):
+                assert isinstance(v, dict), (k, v)
+                if 'http2.data.data_raw' not in v:  # special case for empty decompressed payload
+                    assert v['http2.data.data'] == '', v
+                return Payload.from_tshark_raw(v.get('http2.data.data_raw'))
+        if 'http2.body.fragments' in raw_http2_substream:
+            return Payload.from_tshark_raw(raw_http2_substream['http2.body.fragments']['http2.body.reassembled.data_raw'])
         return Payload.from_tshark_raw(raw_http2_substream.get('http2.data.data_raw'))
+
+    @classmethod
+    def get_raw_data(cls, raw_http2_substreams: Sequence[Mapping[str, Any]]) -> Payload:
+        """
+        Find the data in the substreams.
+
+        :param raw_http2_substreams: the data substreams to be analyzed
+        :return: the raw reassembled data if it exists, otherwise an empty Payload
+        """
+        # 1) search for the unique substream with reassembled data if present
+        substreams_reassembled = {
+            ix: raw_http2_substream for ix, raw_http2_substream in enumerate(raw_http2_substreams)
+            if 'http2.body.fragments' in raw_http2_substream
+        }
+        if substreams_reassembled:
+            # should be unique and for last data substream (on rare cases: != at end of stream)
+            assert len(substreams_reassembled) == 1, substreams_reassembled
+            ix_reassembled, substream_reassembled = next(iter(substreams_reassembled.items()))
+            #assert substream_reassembled['http2.flags'] & 0x01, substream_reassembled
+            assert ix_reassembled == len(raw_http2_substreams) - 1, raw_http2_substreams
+            return cls._get_raw_data_one_substream(substream_reassembled)
+        # 2) if there is none (which happens) we manually concatenate fragments
+        # <!> decompression for overall content is NOT implemented (should not happen?!)
+        return Payload.concat(*(cls._get_raw_data_one_substream(ss) for ss in raw_http2_substreams))
 
     def process(self) -> None:
         """
@@ -369,14 +396,14 @@ class Http2Helper:
         return entry
 
     @staticmethod
-    def get_data(substream: Http2Substream) -> Payload:
+    def get_data(data_substreams: Sequence[Http2Substream]) -> Payload:
         """
-        Extract the data from the substream (precondition: the substream is a data substream).
+        Extract the data from the substreams (precondition: all substreams are data substreams).
 
-        :param substream: the substream to be analyzed
-        :return: the reassembled data if it is a data substream, otherwise None
+        :param data_substreams: the data substreams to be analyzed
+        :return: the reassembled data
         """
-        return Http2Stream.get_raw_data(substream.raw_http2_substream)
+        return Http2Stream.get_raw_data([ss.raw_http2_substream for ss in data_substreams])
 
     @classmethod
     def get_headers_and_data(cls, substreams: list[Http2Substream]):
@@ -389,13 +416,13 @@ class Http2Helper:
         We ignore the rest of the substreams.
 
         Note that (flag & 0x01) identify the end of stream, usually it happens for a data-stream
-        but it may also happen for a header-stream (trailers in gRPC).
+        but it may also happen for a header-stream (trailers in gRPC),
+        or even never happen.
 
         :param substreams: the substreams of a HTTP2 stream
         :return: the headers and data substreams regardless if it is a request or a response
         """
         headers: list[NameValueDict] = []
-        datas: list[Payload] = []
         headers_streams: list[Http2Substream] = []
         data_streams: list[Http2Substream] = []
 
@@ -404,15 +431,14 @@ class Http2Helper:
             if cls.substream_is_header(substream):
                 headers_streams.append(substream)
                 headers += Http2Helper.get_headers(substream)
-            # Parse data (HTTP2 substream marked as data and flagged end of stream)
+            # Register data substreams
             if cls.substream_is_data(substream):
                 data_streams.append(substream)
-                datas.append(Http2Helper.get_data(substream))
 
         if substreams:
             assert headers_streams, (len(substreams), data_streams)
 
-        return headers, Payload.concat(*datas), headers_streams, data_streams
+        return headers, Http2Helper.get_data(data_streams), headers_streams, data_streams
 
 
 class Http2Traffic:
@@ -485,18 +511,23 @@ class Http2Traffic:
             tcp_stream_id = int(layers['tcp']['tcp.stream'])
 
             # HTTP2 layer can be a list of streams or a single stream, force a list
-            http2_layer = layers['http2']
+            http2_layer: list[dict[str, Any]] = layers['http2']
             if not isinstance(http2_layer, list):
                 http2_layer = [layers['http2']]
 
             for http2_layer_stream in http2_layer:
                 stream = http2_layer_stream['http2.stream']
+                assert isinstance(stream, dict), type(stream)
                 http2_frame_type = int(stream.get('http2.type', -1))
                 # Ignore streams that are not data or headers
                 if http2_frame_type not in {0, 1}:
                     continue
-                http2_stream_id = int(stream.get('http2.streamid', -1))
+                # <!> Edge-case: reassembled body is at top-level instead of nested in its stream
+                if 'http2.body.fragments' in http2_layer_stream:
+                    assert 'http2.body.fragments' not in stream, http2_layer_stream
+                    stream['http2_layer_stream'] = http2_layer_stream.pop('http2.body.fragments')
                 # Create a new tuple of (tcp_stream_id, http2_stream_id) if it does not exist
+                http2_stream_id = int(stream['http2.streamid'])
                 sid = (tcp_stream_id, http2_stream_id)
                 if sid not in self.stream_pairs:
                     self.stream_pairs[sid] = Http2Stream(*sid)
@@ -504,7 +535,7 @@ class Http2Traffic:
                 self.stream_pairs[sid].append(stream, layers)
 
         # Process the streams, once for all
-        for _k, http2_stream in self.stream_pairs.items():
+        for http2_stream in self.stream_pairs.values():
             http2_stream.process()
 
     def get_http2_streams(self):
