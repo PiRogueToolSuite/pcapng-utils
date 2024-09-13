@@ -1,5 +1,6 @@
 import base64
 import binascii
+from hashlib import sha1
 from dataclasses import dataclass
 from typing import Sequence, Mapping, Optional, Self, Any
 
@@ -27,6 +28,9 @@ def get_tshark_bytes_from_raw(r: Optional[TsharkRaw]) -> bytes:
     return binascii.unhexlify(hexa)
 
 
+ALLOWED_NON_PRINTABLE_CHARS = str.maketrans('', '', '\t\n\r')
+
+
 @dataclass(frozen=True, repr=False)
 class Payload:
     """Representation of either bytes, possibly representing UTF8 plain-text (useful for HAR export)."""
@@ -41,7 +45,9 @@ class Payload:
         return bool(self.bytes_)
 
     def __repr__(self) -> str:
-        return f"Payload(size={self.size}) @ {id(self):0x}"
+        if not self:
+            return "Payload(size=0)"
+        return f"Payload(size={self.size}, sha1={sha1(self.bytes_).hexdigest()})"
 
     @classmethod
     def concat(cls, *payloads: Self) -> Self:
@@ -58,7 +64,7 @@ class Payload:
         """Export with HAR syntax."""
         try:
             plain_txt = self.bytes_.decode()
-            assert plain_txt.isprintable()  # TODO? allow '\n'?
+            assert plain_txt.translate(ALLOWED_NON_PRINTABLE_CHARS).isprintable()
             return {
                 "size": self.size,
                 "text": plain_txt,
