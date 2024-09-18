@@ -261,7 +261,10 @@ class Http2Stream:
         for k, v in raw_http2_substream.items():
             if k.lower().startswith('content-encoded entity body '):
                 assert isinstance(v, dict), (k, v)
-                if 'http2.data.data_raw' not in v:  # special case for empty decompressed payload
+                if 'http2.data.data_raw' not in v:
+                    if 'data_raw' in v:  # special case for failed decompression (not observed but as http protocol?!)
+                        return Payload.from_tshark_raw(v['data_raw'])
+                    # also happens in special case of empty decompressed payload (observed)
                     assert v['http2.data.data'] == '', v
                 return Payload.from_tshark_raw(v.get('http2.data.data_raw'))
         if 'http2.body.fragments' in raw_http2_substream:

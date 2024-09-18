@@ -56,7 +56,14 @@ class HttpRequestResponse(ABC):
 
     @cached_property
     def payload(self) -> Payload:
-        return Payload.from_tshark_raw(self.http_layer.get('http.file_data_raw'))
+        raw_data = self.http_layer.get('http.file_data_raw')
+        if raw_data is None:
+            # handle tshark error during decompression
+            for k, v in self.http_layer.items():
+                if k.lower().startswith('content-encoded entity body ') and isinstance(v, dict):
+                    raw_data = v['data_raw']
+                    break
+        return Payload.from_tshark_raw(raw_data)
 
     @property
     def content_length(self) -> int:
