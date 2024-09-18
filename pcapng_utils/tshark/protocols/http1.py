@@ -1,10 +1,8 @@
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cached_property
 from dataclasses import dataclass
 from typing import Sequence, ClassVar, Any
-
-import pytz
 
 from ..types import HarEntry, DictLayers
 from ..utils import Payload, get_layers_mapping, get_tshark_bytes_from_raw
@@ -72,9 +70,9 @@ class HttpRequestResponse(ABC):
     @property
     def started_date(self) -> str:
         frame_time: str = self.packet['frame']['frame.time_epoch']
-        return datetime.fromtimestamp(float(frame_time), pytz.utc).isoformat()
+        return datetime.fromtimestamp(float(frame_time), timezone.utc).isoformat()
 
-    @property
+    @cached_property
     def headers(self) -> list[dict[str, str]]:
         assert isinstance(self.raw_headers, list), self.raw_headers
         processed_headers = []
@@ -115,7 +113,7 @@ class HttpRequest(HttpRequestResponse):
         return 'HTTP/1.1', ''
 
     @property
-    def sending_duration(self):
+    def sending_duration(self) -> float:
         return round(1000 * float(self.packet['frame'].get('frame.time_delta', 0)), 2)
 
     def to_har(self) -> dict[str, Any]:

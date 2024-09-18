@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
-from typing import Sequence, Any
+from datetime import datetime, timezone
+from typing import Any
 
-from .types import DictPacket, DictLayers, ParsedTrafficProtocol
+from .types import ParsedTrafficProtocol
+from .wrapper import TsharkOutput
 
 
 class NetworkTrafficDump:
@@ -10,23 +12,18 @@ class NetworkTrafficDump:
     The NetworkTrafficDump class is designed to handle and process network traffic data.
 
     Attributes:
+        creation_metadata (dict): Some metadata of input file to export in HAR creator comment
         traffic (list[dict]): A list of dictionaries containing traffic data.
-        conversations (list): A list to store conversation data.
-        parsed_traffic[class, instance]: Mapping of parsed traffic per protocol class
+        parsed_traffic (dict[class, instance]): Mapping of parsed traffic per protocol class
         (e.g. Http1Traffic, Http2Traffic)
     """
-    def __init__(self, packets: Sequence[DictPacket]):
-        self.traffic = self.get_list_layers(packets)
-        self.conversations = []
+    def __init__(self, tshark_output: TsharkOutput):
+        self.traffic = tshark_output.list_layers
+        self.creation_metadata = {
+            'creation_datetime': datetime.now(timezone.utc).isoformat(),
+            **tshark_output.metadata
+        }
         self.parsed_traffic: dict[type[ParsedTrafficProtocol], ParsedTrafficProtocol] = {}
-
-    @staticmethod
-    def get_list_layers(packets: Sequence[DictPacket]) -> Sequence[DictLayers]:
-        """Extract layers: for each packet, it extracts the layers from the `_source` key."""
-        assert isinstance(packets, Sequence), type(packets)
-        return [
-            packet['_source']['layers'] for packet in packets
-        ]
 
     def parse_traffic(self) -> None:
         """
@@ -53,9 +50,9 @@ class NetworkTrafficDump:
             'log': {
                 'version': '1.2',
                 'creator': {
-                    'name': 'PiRogue',
+                    'name': 'PiRogue PCAPNG -> HAR',
                     'version': __version__,
-                    'comment': 'PiRogue HTTP Traffic HAR'
+                    'comment': json.dumps(self.creation_metadata),
                 },
                 'pages': [],
                 'entries': entries

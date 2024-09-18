@@ -1,9 +1,7 @@
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cached_property
 from typing import Sequence, Mapping, ClassVar, Optional, Any
-
-import pytz
 
 from ..types import HarEntry, DictLayers, NameValueDict
 from ..utils import Payload, get_tshark_bytes_from_raw
@@ -62,7 +60,7 @@ class Http2Substream:
     @property
     def started_date(self) -> str:
         frame_time: str = self.frame_layer['frame.time_epoch']
-        return datetime.fromtimestamp(float(frame_time), pytz.utc).isoformat()
+        return datetime.fromtimestamp(float(frame_time), timezone.utc).isoformat()
 
     def get_time_s(self) -> float:
         return float(self.frame_layer.get('frame.time_epoch', 0))
