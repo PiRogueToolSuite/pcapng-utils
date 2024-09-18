@@ -182,17 +182,20 @@ class Http2Stream:
      | Http2SubStream 7    | Response data (type: 0, flags: 0x1) - end of stream, contains reassembled data
      | (Http2SubStream 8   | Response trailers (type: 1))
      +--------------------------------------
-     Each HTTP2 stream is defined by a tuple (tcp stream, http2 stream) and contains both request and response objects.
+     Each HTTP2 stream is uniquely identified by a tuple (tcp stream index, http2 stream index)
+     and contains both request and response objects.
     """
-    def __init__(self, tcp_stream_id: int, http2_stream_id: int):
+    def __init__(self, tcp_stream_id: int, http2_stream_id: int, community_id: str):
         """
         Defines a HTTP2 stream for the given TCP stream and HTTP2 stream.
 
         :param tcp_stream_id: the ID of the TCP stream
         :param http2_stream_id: the ID of the HTTP2 stream
+        :param community_id: the community ID (i.e. TCP|UDP + ips & ports) for this conversation
         """
         self.tcp_stream_id = tcp_stream_id
         self.http2_stream_id = http2_stream_id
+        self.community_id = community_id
         self.request: Optional[Http2Request] = None
         self.response: Optional[Http2Response] = None
         self.substreams: list[Http2Substream] = []
@@ -241,6 +244,8 @@ class Http2Stream:
                 'receive': self.response.get_duration_ms(),
             },
             'cache': {},
+            'serverIPAddress': first_stream.dst_ip,
+            'connection': self.community_id,
             'request': Http2Helper.to_har(self.request),
             'response': Http2Helper.to_har(self.response),
         }
@@ -509,6 +514,7 @@ class Http2Traffic:
             if 'http2' not in protocols:
                 continue
             tcp_stream_id = int(layers['tcp']['tcp.stream'])
+            community_id: str = layers['communityid']
 
             # HTTP2 layer can be a list of streams or a single stream, force a list
             http2_layer: list[dict[str, Any]] = layers['http2']
@@ -530,7 +536,9 @@ class Http2Traffic:
                 http2_stream_id = int(stream['http2.streamid'])
                 sid = (tcp_stream_id, http2_stream_id)
                 if sid not in self.stream_pairs:
-                    self.stream_pairs[sid] = Http2Stream(*sid)
+                    self.stream_pairs[sid] = Http2Stream(*sid, community_id=community_id)
+                else:
+                    assert community_id == self.stream_pairs[sid].community_id, (community_id, self.stream_pairs[sid].community_id)
                 # Append the substream to the list
                 self.stream_pairs[sid].append(stream, layers)
 

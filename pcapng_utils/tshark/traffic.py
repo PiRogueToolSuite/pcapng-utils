@@ -70,5 +70,6 @@ class NetworkTrafficDump:
 
         :param output_file: the file to save the HAR data to
         """
-        with output_file.open('w' if overwrite else 'x') as _of:
-            json.dump(self.to_har(), _of, indent=indent, **json_dump_kws)
+        har_content = self.to_har()  # fail before creating/overwriting file
+        with output_file.open('w' if overwrite else 'x') as fp:
+            json.dump(har_content, fp, indent=indent, **json_dump_kws)

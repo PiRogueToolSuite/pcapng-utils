@@ -58,6 +58,7 @@ class Tshark:
             '--no-duplicate-keys',  # merge json keys
             '-Y', 'http || http2',  # display filters
             '-J', 'frame ip tcp http http2',  # do not export data of useless layers
+            '--enable-protocol', 'communityid',
         ]
         cmd = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if cmd.returncode != 0:

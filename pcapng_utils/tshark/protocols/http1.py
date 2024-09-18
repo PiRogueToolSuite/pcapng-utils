@@ -32,6 +32,10 @@ class HttpRequestResponse(ABC):
     FALLBACK_CONTENT_TYPE: ClassVar = 'application/octet-stream'
 
     @property
+    def community_id(self) -> str:
+        return self.packet['communityid']
+
+    @property
     def http_layer(self) -> dict[str, Any]:
         return self.packet['http']
 
@@ -210,6 +214,12 @@ class HttpConversation:
         self.response = HttpResponse(response_layers)
 
     @property
+    def community_id(self) -> str:
+        cid = self.request.community_id
+        assert cid == self.response.community_id, (cid, self.response.community_id)
+        return cid
+
+    @property
     def request_timestamp(self) -> float:
         return float(self.request.packet['frame']['frame.time_epoch'])
 
@@ -234,6 +244,8 @@ class HttpConversation:
                 'receive': self.response.receiving_duration
             },
             'cache': {},
+            'serverIPAddress': self.request.dst_ip,
+            'connection': self.community_id,
             'request': self.request.to_har(),
             'response': self.response.to_har()
         }
