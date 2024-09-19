@@ -37,28 +37,36 @@ def cli() -> None:
         )
 
     args = parser.parse_args()
-    input_file = Path(args.i)
-    output_file = Path(args.o) if args.o else input_file.with_suffix(".har")
     try:
-        pcapng_to_har(input_file, output_file, tshark_path=args.tshark, overwrite=args.force)
+        pcapng_to_har(args.i, args.o, tshark=Tshark(args.tshark), overwrite=args.force)
     except Exception as e:
-        raise RuntimeError(input_file) from e
+        raise RuntimeError(args.i) from e
 
 
 def pcapng_to_har(
-    input_file: Path, output_file: Path, *, tshark_path: Path, overwrite: bool = False, **json_dump_kws: Any
+    input_file: Path | str,
+    output_file: Path | str | None = None,
+    *,
+    tshark: Tshark | None = None,
+    overwrite: bool = False,
+    **json_dump_kws: Any,
 ) -> None:
     """Convert .pcapng file to .har file using tshark"""
-    assert output_file != input_file
+    input_file = Path(input_file)
+    if output_file is None:
+        output_file = input_file.with_suffix('.har')
+    else:
+        output_file = Path(output_file)
+
+    assert output_file != input_file, input_file
     if output_file.exists() and not overwrite:  # fail fast
         raise FileExistsError(output_file)
 
-    # Load the traffic from the PCAPNG file
-    tshark_wrapper = Tshark(pcapng_file=input_file, tshark_path=str(tshark_path))
-    tshark_wrapper.load_traffic()
-    # Parse the traffic
-    assert isinstance(tshark_wrapper.traffic, list)
-    traffic = NetworkTrafficDump(tshark_wrapper.traffic)
+    if tshark is None:
+        tshark = Tshark()  # default executable path
+
+    # Load & parse the traffic from the PCAPNG file
+    traffic = NetworkTrafficDump(tshark.load_traffic(input_file))
     traffic.parse_traffic()
     # Save the HAR file
     traffic.save_har(output_file, overwrite=overwrite, **json_dump_kws)
