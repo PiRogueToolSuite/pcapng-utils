@@ -2,6 +2,7 @@ import base64
 import binascii
 from hashlib import sha1
 from dataclasses import dataclass
+from re import sub
 from typing import Sequence, Mapping, Optional, Self, Any
 
 from .types import DictLayers, TsharkRaw
@@ -29,6 +30,20 @@ def get_tshark_bytes_from_raw(r: Optional[TsharkRaw]) -> bytes:
 
 
 ALLOWED_NON_PRINTABLE_CHARS = str.maketrans('', '', '\t\n\r')
+
+
+def to_camel_case(s):
+    s = sub(r"(_|-)+", " ", s).title().replace(" ", "")
+    return ''.join([s[0].lower(), s[1:]])
+
+
+def prefix_string_camel_case(key: str, prefix: str = '_'):
+    return f'{prefix}{to_camel_case(key)}'
+
+
+def clean_prefixed_ip_address(ip_address: str) -> str:
+    if ip_address.startswith('::ffff:') and ip_address.count('.') == 3:
+        return ip_address.replace('::ffff:', '')
 
 
 @dataclass(frozen=True, repr=False)

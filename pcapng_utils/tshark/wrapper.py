@@ -90,6 +90,7 @@ class Tshark:
             '-r', pcapng_file.as_posix(),
             '-x',  # output raw fields as well
             '-T', 'json',
+            '-NdnN',  # name resolution
             '--no-duplicate-keys',  # merge json keys
             '-Y', 'http || http2',  # display filters
             '-J', 'frame ip tcp http http2',  # do not export data of useless layers
@@ -99,4 +100,6 @@ class Tshark:
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode())
         list_packets = json.loads(proc.stdout)
+        with open(f'{pcapng_file}.json', 'w') as f:
+            json.dump(list_packets, f)
         return TsharkOutput(list_packets, metadata)

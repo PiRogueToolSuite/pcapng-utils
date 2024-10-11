@@ -30,12 +30,20 @@ class Http2Substream:
         return int(self.raw_http2_substream.get('http2.type', -1))
 
     @property
+    def timestamp(self) -> float:
+        return float(self.frame_layer.get('frame.time_epoch', 0))
+
+    @property
     def ip_layer(self) -> dict[str, Any]:
         return self.packet_layers['ip']
 
     @property
     def frame_layer(self) -> dict[str, Any]:
         return self.packet_layers['frame']
+
+    @property
+    def community_id(self) -> str:
+        return self.packet_layers.get('community_id', '')
 
     @property
     def src_host(self) -> str:
@@ -79,6 +87,30 @@ class Http2RequestResponse:
 
     def __bool__(self) -> bool:
         return bool(self.substreams)
+
+    @property
+    def timestamp(self) -> float:
+        return self.substreams[0].timestamp
+
+    @property
+    def community_id(self) -> str:
+        return self.substreams[0].community_id
+
+    @property
+    def src_host(self) -> str:
+        return self.substreams[0].src_host
+
+    @property
+    def dst_host(self) -> str:
+        return self.substreams[0].dst_host
+
+    @property
+    def src_ip(self) -> str:
+        return self.substreams[0].src_ip
+
+    @property
+    def dst_ip(self) -> str:
+        return self.substreams[0].dst_ip
 
     @property
     def http_version(self) -> str:
@@ -235,7 +267,7 @@ class Http2Stream:
         return {
             'startedDateTime': first_stream.started_date,
             'timestamp': first_stream.get_time_s(),
-            'time': 0,  # not used
+            'time': self.request.get_duration_ms() + self.waiting_duration + self.response.get_duration_ms(),
             'timings': {
                 'send': self.request.get_duration_ms(),
                 'wait': self.waiting_duration,
@@ -243,7 +275,7 @@ class Http2Stream:
             },
             'cache': {},
             'serverIPAddress': first_stream.dst_ip,
-            'connection': self.community_id,
+            '_communityId': self.community_id,
             'request': Http2Helper.to_har(self.request),
             'response': Http2Helper.to_har(self.response),
         }
@@ -377,10 +409,21 @@ class Http2Helper:
         entry = {
             'httpVersion': message.http_version,
             'headers': message.headers,
-            'queryString': [],  # TODO?
-            'cookies': [],  # TODO?
+            'queryString': [],
+            'cookies': [],
             'headersSize': message.header_length,
             'bodySize': message.body_length,
+            '_timestamp': message.timestamp,
+            '_communication': {
+                'src': {
+                    'ip': message.src_ip,
+                    'host': message.src_host,
+                },
+                'dst': {
+                    'ip': message.dst_ip,
+                    'host': message.dst_host,
+                }
+            },
         }
         if isinstance(message, Http2Request):
             entry['method'] = message.http_method
@@ -389,7 +432,7 @@ class Http2Helper:
                 entry['postData'] = {
                     'mimeType': message.content_type,
                     **message.data.to_har_dict(),
-                    'params': [],  # TODO?
+                    'params': [],
                 }
         else:
             entry['status'] = message.http_status

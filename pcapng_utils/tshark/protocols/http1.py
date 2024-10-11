@@ -34,6 +34,22 @@ class HttpRequestResponse(ABC):
         return self.packet['communityid']
 
     @property
+    def src_host(self) -> str:
+        return self.packet['ip'].get('ip.src_host', '')
+
+    @property
+    def dst_host(self) -> str:
+        return self.packet['ip'].get('ip.dst_host', '')
+
+    @property
+    def src_ip(self) -> str:
+        return self.packet['ip']['ip.src']
+
+    @property
+    def dst_ip(self) -> str:
+        return self.packet['ip']['ip.dst']
+
+    @property
     def http_layer(self) -> dict[str, Any]:
         return self.packet['http']
 
@@ -66,6 +82,10 @@ class HttpRequestResponse(ABC):
     @property
     def content_length(self) -> int:
         return self.payload.size
+
+    @property
+    def timestamp(self) -> float:
+        return float(self.packet['frame']['frame.time_epoch'])
 
     @property
     def started_date(self) -> str:
@@ -128,8 +148,19 @@ class HttpRequest(HttpRequestResponse):
             'url': self.uri,
             'httpVersion': http_version,
             'headers': self.headers,
-            'queryString': [], # TODO?
-            'cookies': [], # TODO?
+            'queryString': [],
+            'cookies': [],
+            '_timestamp': self.timestamp,
+            '_communication': {
+                'src': {
+                    'ip': self.src_ip,
+                    'host': self.src_host,
+                },
+                'dst': {
+                    'ip': self.dst_ip,
+                    'host': self.dst_host,
+                }
+            },
             'headersSize': self.header_length,
             'bodySize': self.content_length,
         }
@@ -143,22 +174,6 @@ class HttpRequest(HttpRequestResponse):
     @property
     def uri(self) -> str:
         return self.http_layer['http.request.full_uri']
-
-    @property
-    def src_host(self) -> str:
-        return self.packet['ip'].get('ip.src_host', '')
-
-    @property
-    def dst_host(self) -> str:
-        return self.packet['ip'].get('ip.dst_host', '')
-
-    @property
-    def src_ip(self) -> str:
-        return self.packet['ip']['ip.src']
-
-    @property
-    def dst_ip(self) -> str:
-        return self.packet['ip']['ip.dst']
 
 
 @dataclass(frozen=True)
@@ -194,11 +209,23 @@ class HttpResponse(HttpRequestResponse):
             'startedDateTime': self.started_date,
             'status': status_code,
             'statusText': status_message,
+            'redirectURL': '',
             'httpVersion': http_version,
             'headers': self.headers,
-            'cookies': [],  # TODO?
+            'cookies': [],
             'headersSize': self.header_length,
             'bodySize': self.content_length,
+            '_timestamp': self.timestamp,
+            '_communication': {
+                'src': {
+                    'ip': self.src_ip,
+                    'host': self.src_host,
+                },
+                'dst': {
+                    'ip': self.dst_ip,
+                    'host': self.dst_host,
+                }
+            },
             'content': {
                 'mimeType': self.content_type,
                 **self.payload.to_har_dict(),
@@ -242,7 +269,7 @@ class HttpConversation:
         return {
             'startedDateTime': self.request.started_date,
             'timestamp': self.request_timestamp,
-            'time': 0,  # TODO?
+            'time': self.request.sending_duration + self.waiting_duration + self.response.receiving_duration,
             'timings': {
                 'send': self.request.sending_duration,
                 'wait': self.waiting_duration,
@@ -250,7 +277,7 @@ class HttpConversation:
             },
             'cache': {},
             'serverIPAddress': self.request.dst_ip,
-            'connection': self.community_id,
+            '_communityId': self.community_id,
             'request': self.request.to_har(),
             'response': self.response.to_har()
         }

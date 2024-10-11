@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-
+import json
 import platform
 from pathlib import Path
 from argparse import ArgumentParser
 from typing import Any
 
+from pcapng_utils.tshark.enrichment.stacktrace import Stacktrace
 from pcapng_utils.tshark.traffic import NetworkTrafficDump
 from pcapng_utils.tshark.wrapper import Tshark
 
@@ -48,6 +49,7 @@ def pcapng_to_har(
     output_file: Path | str | None = None,
     *,
     tshark: Tshark | None = None,
+    socket_trace_file: Path | str | None = None,
     overwrite: bool = False,
     **json_dump_kws: Any,
 ) -> None:
@@ -68,8 +70,18 @@ def pcapng_to_har(
     # Load & parse the traffic from the PCAPNG file
     traffic = NetworkTrafficDump(tshark.load_traffic(input_file))
     traffic.parse_traffic()
+
     # Save the HAR file
     traffic.save_har(output_file, overwrite=overwrite, **json_dump_kws)
+
+    # Add stacktrace information to the HAR
+    har_data = traffic.to_har()
+    socket_trace_file = Path(socket_trace_file) if socket_trace_file else None
+    if socket_trace_file and socket_trace_file.is_file():
+        se = Stacktrace(har_data, socket_trace_file)
+        se.enrich()
+        with output_file.open('w') as f:
+            json.dump(har_data, f, **json_dump_kws)
 
 
 if __name__ == "__main__":
