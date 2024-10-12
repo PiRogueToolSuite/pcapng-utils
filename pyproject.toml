@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pcapng-utils"
+version = "1.0.0"
+description = "A set of Python scripts to manipulate PCAPNG files"
+readme = "README.md"
+license = {text = "GPL-3.0+ AND MIT"}
+
+requires-python = ">= 3.11"
+dependencies = [
+  "communityid==1.5.0"
+]
+
+authors = [
+  {name = "Étienne Maheux (PEReN)", email = "etienne.maheux@peren.gouv.fr"},
+  {name = "Esther Onfroy (PEReN)", email = "esther.onfroy@peren.gouv.fr"},
+]
+
+maintainers = [
+  {name = "U+039b", email = "hello@pts-project.org"}
+]
+
+[project.scripts]
+pcapng_to_har = "pcapng_to_har:cli"
+
+[project.urls]
+repository = "https://github.com/PiRogueToolSuite/pcapng-utils"
+issues = "https://github.com/PiRogueToolSuite/pcapng-utils/issues"
