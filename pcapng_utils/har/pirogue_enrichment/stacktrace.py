@@ -1,30 +1,27 @@
 # SPDX-FileCopyrightText: 2024 Pôle d'Expertise de la Régulation Numérique - PEReN <contact@peren.gouv.fr>
 # SPDX-License-Identifier: MIT
 
-import json
+import logging
 from pathlib import Path
 from typing import Any
 
 import communityid
 
-from pcapng_utils.tshark.enrichment import Enrichment
-from pcapng_utils.tshark.utils import prefix_string_camel_case, clean_prefixed_ip_address
+from pcapng_utils.har.pirogue_enrichment import HarEnrichment
+from pcapng_utils.har.pirogue_enrichment.utils import prefix_string_camel_case, clean_prefixed_ip_address
+
+logger = logging.getLogger('enrichment')
 
 
-class Stacktrace(Enrichment):
-    def __init__(self, har_data: dict, data_file: Path):
-        super().__init__(har_data, data_file)
-        self.socket_traces = []
+class Stacktrace(HarEnrichment):
+    def __init__(self, har_data: dict, input_data_file: Path):
+        super().__init__(har_data, input_data_file)
 
-        if not data_file.exists() or not data_file.is_file():
-            raise ValueError(f"Invalid stacktrace file: {data_file}")
-
-        # Load the operations on sockets and their associated stack traces
-        with data_file.open('r') as f:
-            socket_traces: list[dict] = json.load(f)
-        if socket_traces:
+        if self.can_enrich:
             # Preprocess the socket traces: remove unnecessary fields and prefix keys
-            self.socket_traces = self._preprocess_socket_traces(socket_traces, prefix='')
+            self.socket_traces = self._preprocess_socket_traces(self.input_data, prefix='')
+        else:
+            logger.warning('HAR enrichment with stacktrace information cannot be performed, skip.')
 
     @staticmethod
     def _can_enrich(har_entry: dict) -> bool:
@@ -57,19 +54,27 @@ class Stacktrace(Enrichment):
 
     def _find_stacktrace(self, community_id: str, timestamp: float, socket_operations: list[str]) -> dict:
         """ Find the stacktrace with the closest timestamp to the given one matching the community ID """
-        best_guess = None
-        min_time = 9999999999.
+        best_guess: dict = {}
+        min_time = 2. ** 31 - 1
+        # The objective is to find the stacktrace by minimizing the time difference between the HAR entry and
+        # the stacktrace timestamp
         for socket_trace in self.socket_traces:
             socket_data = socket_trace['data']
+            # No stacktrace data, skip
             if 'stack' not in socket_data:
                 continue
             self._attach_community_id_to_stacktrace(socket_trace)
+            # Check if the community ID and the socket operations match
             if socket_data['communityId'] == community_id and socket_data['socketEventType'] in socket_operations:
                 trace_timestamp = socket_trace['timestamp']
                 delta = abs(trace_timestamp - timestamp)
                 if delta < min_time:
                     min_time = delta
                     best_guess = socket_trace
+        if best_guess:
+            logger.debug(f'Stacktrace found with ∆t={min_time * 1000:.1f}ms, for {community_id} {socket_operations}')
+        else:
+            logger.warning(f'No stacktrace has been found for {community_id}')
         return best_guess
 
     @staticmethod
@@ -85,12 +90,16 @@ class Stacktrace(Enrichment):
 
     def _enrich_entry(self, har_entry: dict, community_id: str, direction: str) -> dict:
         """Attack the stacktrace to the given HAR entry (either request or response)"""
+        # Fail first
+        if direction not in ('in', 'out'):
+            raise ValueError(f'Invalid communication direction: {direction}')
         if not self._can_enrich(har_entry):
             return har_entry
-        # Use read operations on the socket when dealing with a response, write operations otherwise
+        # Use read operations on the socket when dealing with a response (in), write operations otherwise
         socket_operations = ['write', 'sendto'] if direction == 'out' else ['read', 'recvfrom']
         timestamp = float(har_entry['_timestamp'])
         stack_trace = self._find_stacktrace(community_id, timestamp, socket_operations)
+        # Attach the stacktrace to the HAR entry if found
         if stack_trace:
             har_entry['_stacktrace'] = stack_trace.get('data', None)
             har_entry['_stacktrace']['compact'] = self._compact_stack_trace(stack_trace)
@@ -132,9 +141,9 @@ class Stacktrace(Enrichment):
 
     def enrich(self):
         """Enrich the HAR data with the stacktraces information"""
-        if not self.socket_traces:
+        if not self.can_enrich:
             return
-        for entry in self.har_data['log']['entries']:
-            community_id = entry.get('_communityId')
-            entry['request'] = self._enrich_entry(entry.get('request'), community_id, direction='out')
-            entry['response'] = self._enrich_entry(entry.get('response'), community_id, direction='in')
+        for har_entry in self.har_data['log']['entries']:
+            community_id = har_entry.get('_communityId')
+            har_entry['request'] = self._enrich_entry(har_entry.get('request'), community_id, direction='out')
+            har_entry['response'] = self._enrich_entry(har_entry.get('response'), community_id, direction='in')

@@ -26,7 +26,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-Prior to using this converter, please have a look at [documentation on how to convert .pcap to .pcapng](./pcapng_utils/tshark/wrapper.py#L28)
+Prior to using this converter, please have a look at [documentation on how to convert .pcap to .pcapng](./pcapng_utils/tshark/wrapper.py#L54)
 
 ### Shell
 
@@ -36,12 +36,14 @@ Run `./pcapng_to_har.py [-h]` in your shell (with your Python virtual environmen
 
 ```python
 from pcapng_to_har import pcapng_to_har, Tshark
-pcapng_to_har(
+def pcapng_to_har(
     input_file: Path | str,
     output_file: Path | str | None = None,
     *,
     tshark: Tshark | None = None,
+    socket_operations_file: Path | str | None = None,
+    cryptography_operations_file: Path | str | None = None,
     overwrite: bool = False,
-    **json_dump_kws: Any  # e.g. indent=4
-)
+    **json_dump_kws: Any,
+) -> None:
 ```
