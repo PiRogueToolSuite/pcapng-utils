@@ -100,6 +100,4 @@ class Tshark:
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.decode())
         list_packets = json.loads(proc.stdout)
-        with open(f'{pcapng_file}.json', 'w') as f:
-            json.dump(list_packets, f)
         return TsharkOutput(list_packets, metadata)
