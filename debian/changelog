@@ -1,0 +1,5 @@
+pcapng-utils (1.0.3) bookworm; urgency=medium
+
+  * Initial release for Debian.
+
+ -- U+039b <hello@pts-project.org>  Thu, 17 Oct 2024 18:12:09 +0200
