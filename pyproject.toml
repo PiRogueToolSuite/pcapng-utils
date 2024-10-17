@@ -2,9 +2,13 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["pcapng_utils*"]
+namespaces = false
+
 [project]
 name = "pcapng-utils"
-version = "1.0.2"
+version = "1.0.3"
 description = "A set of Python scripts to manipulate PCAPNG files"
 readme = "README.md"
 license = {text = "GPL-3.0+ AND MIT"}
@@ -24,7 +28,7 @@ maintainers = [
 ]
 
 [project.scripts]
-pcapng_to_har = "pcapng_to_har:cli"
+pcapng_to_har = "pcapng_utils.pcapng_to_har:cli"
 
 [project.urls]
 repository = "https://github.com/PiRogueToolSuite/pcapng-utils"
