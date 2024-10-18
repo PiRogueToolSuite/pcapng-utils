@@ -6,10 +6,10 @@ from pathlib import Path
 from argparse import ArgumentParser
 from typing import Any
 
-from pcapng_utils.har.pirogue_enrichment.decryption import ContentDecryption
-from pcapng_utils.har.pirogue_enrichment.stacktrace import Stacktrace
-from pcapng_utils.tshark.traffic import NetworkTrafficDump
-from pcapng_utils.tshark.wrapper import Tshark
+from .har.pirogue_enrichment.decryption import ContentDecryption
+from .har.pirogue_enrichment.stacktrace import Stacktrace
+from .tshark.traffic import NetworkTrafficDump
+from .tshark.wrapper import Tshark
 
 DEFAULT_TSHARK_PATH = {
     "Linux": "/usr/bin/tshark",
@@ -100,34 +100,29 @@ def pcapng_to_har(
     traffic = NetworkTrafficDump(tshark.load_traffic(input_file))
     traffic.parse_traffic()
 
-    # Save the HAR file
-    traffic.save_har(output_file, overwrite=overwrite, **json_dump_kws)
-
-    # Get the HAR data
-    har_data = traffic.to_har()
+    # Save the HAR file and retrieve the output HAR data
+    har_data = traffic.save_har(output_file, overwrite=overwrite, **json_dump_kws)
 
     # Add stacktrace information to the HAR
     enriched = False  # whether the HAR data has been enriched
     socket_operations_file = Path(socket_operations_file) if socket_operations_file else None
     if socket_operations_file and socket_operations_file.is_file():
-        enriched = True
         se = Stacktrace(har_data, socket_operations_file)
-        se.enrich()
+        enriched |= se.enrich()
         logger.info(f"The HAR has been enriched with stacktrace data from {socket_operations_file}")
     else:
-        logger.error(f"Invalid stacktrace data input file, skip enrichment")
+        logger.warning("Invalid stacktrace data input file, skipping this enrichment")
 
     # Add content decryption to the HAR
     cryptography_operations_file = Path(cryptography_operations_file) if cryptography_operations_file else None
     if cryptography_operations_file and cryptography_operations_file.is_file():
-        enriched = True
         de = ContentDecryption(har_data, cryptography_operations_file)
-        de.enrich()
+        enriched |= de.enrich()
         logger.info(f"The HAR has been enriched with decrypted content from {cryptography_operations_file}")
     else:
-        logger.error(f"Invalid decryption data input file, skip enrichment")
+        logger.warning("Invalid decryption data input file, skipping this enrichment")
 
-    # Save the enriched HAR data
+    # Re-save the enriched HAR data
     if enriched:
         with output_file.open("w") as f:
             json.dump(har_data, f, **json_dump_kws)

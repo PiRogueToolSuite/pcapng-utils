@@ -4,8 +4,9 @@ from functools import cached_property
 from dataclasses import dataclass
 from typing import Sequence, ClassVar, Any
 
+from ...payload import Payload
 from ..types import HarEntry, DictLayers
-from ..utils import Payload, get_layers_mapping, get_tshark_bytes_from_raw
+from ..utils import get_layers_mapping, get_tshark_bytes_from_raw
 
 HTTP_METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'}
 
@@ -27,7 +28,7 @@ class HttpRequestResponse(ABC):
     """
     packet: DictLayers
 
-    FALLBACK_CONTENT_TYPE: ClassVar = 'application/octet-stream'
+    FALLBACK_CONTENT_TYPE: ClassVar[str] = 'application/octet-stream'
 
     @property
     def community_id(self) -> str:
@@ -77,7 +78,7 @@ class HttpRequestResponse(ABC):
                 if k.lower().startswith('content-encoded entity body ') and isinstance(v, dict):
                     raw_data = v['data_raw']
                     break
-        return Payload.from_tshark_raw(raw_data)
+        return Payload(get_tshark_bytes_from_raw(raw_data))
 
     @property
     def content_length(self) -> int:
@@ -89,8 +90,7 @@ class HttpRequestResponse(ABC):
 
     @property
     def started_date(self) -> str:
-        frame_time: str = self.packet['frame']['frame.time_epoch']
-        return datetime.fromtimestamp(float(frame_time), timezone.utc).isoformat()
+        return datetime.fromtimestamp(self.timestamp, timezone.utc).isoformat()
 
     @cached_property
     def headers(self) -> list[dict[str, str]]:
@@ -105,6 +105,26 @@ class HttpRequestResponse(ABC):
                 'value': value.strip(),
             })
         return processed_headers
+
+    @property
+    def common_har_props(self) -> dict[str, Any]:
+        return {
+            'cookies': [],
+            'headers': self.headers,
+            'headersSize': self.header_length,
+            'bodySize': self.content_length,
+            '_timestamp': self.timestamp,
+            '_communication': {
+                'src': {
+                    'ip': self.src_ip,
+                    'host': self.src_host,
+                },
+                'dst': {
+                    'ip': self.dst_ip,
+                    'host': self.dst_host,
+                }
+            },
+        }
 
 
 @dataclass(frozen=True)
@@ -143,32 +163,14 @@ class HttpRequest(HttpRequestResponse):
         """
         http_version, method = self.http_version_method
         d = {
-            'startedDateTime': self.started_date,
             'method': method,
             'url': self.uri,
-            'httpVersion': http_version,
-            'headers': self.headers,
             'queryString': [],
-            'cookies': [],
-            '_timestamp': self.timestamp,
-            '_communication': {
-                'src': {
-                    'ip': self.src_ip,
-                    'host': self.src_host,
-                },
-                'dst': {
-                    'ip': self.dst_ip,
-                    'host': self.dst_host,
-                }
-            },
-            'headersSize': self.header_length,
-            'bodySize': self.content_length,
+            'httpVersion': http_version,
+            **self.common_har_props,
         }
         if self.content_length:
-            d['postData'] = {
-                'mimeType': self.content_type,
-                **self.payload.to_har_dict(),
-            }
+            self.payload.fill_har_request(d, self.content_type)
         return d
 
     @property
@@ -205,32 +207,15 @@ class HttpResponse(HttpRequestResponse):
         :return: the HTTP response in HAR format
         """
         http_version, status_code, status_message = self.http_version_status_code_message
-        return {
-            'startedDateTime': self.started_date,
+        d = {
             'status': status_code,
             'statusText': status_message,
             'redirectURL': '',
             'httpVersion': http_version,
-            'headers': self.headers,
-            'cookies': [],
-            'headersSize': self.header_length,
-            'bodySize': self.content_length,
-            '_timestamp': self.timestamp,
-            '_communication': {
-                'src': {
-                    'ip': self.src_ip,
-                    'host': self.src_host,
-                },
-                'dst': {
-                    'ip': self.dst_ip,
-                    'host': self.dst_host,
-                }
-            },
-            'content': {
-                'mimeType': self.content_type,
-                **self.payload.to_har_dict(),
-            }
+            **self.common_har_props,
         }
+        self.payload.fill_har_response(d, self.content_type)
+        return d
 
     @property
     def receiving_duration(self) -> float:
@@ -252,29 +237,24 @@ class HttpConversation:
         return cid
 
     @property
-    def request_timestamp(self) -> float:
-        return float(self.request.packet['frame']['frame.time_epoch'])
-
-    @property
     def waiting_duration(self) -> float:
-        start_time = self.request_timestamp
-        stop_time = float(self.response.packet['frame']['frame.time_epoch'])
-        return round(1000 * (stop_time - start_time), 2)
+        return round(1000 * (self.response.timestamp - self.request.timestamp), 2)
 
     def to_har(self) -> dict[str, Any]:
         """
         Convert the HTTP conversation to HTTP Archive (HAR) format.
         :return: the HTTP conversation (request and response) in HAR format
         """
+        timings = {
+            'send': self.request.sending_duration,
+            'wait': self.waiting_duration,
+            'receive': self.response.receiving_duration
+        }
         return {
             'startedDateTime': self.request.started_date,
-            'timestamp': self.request_timestamp,
-            'time': self.request.sending_duration + self.waiting_duration + self.response.receiving_duration,
-            'timings': {
-                'send': self.request.sending_duration,
-                'wait': self.waiting_duration,
-                'receive': self.response.receiving_duration
-            },
+            '_timestamp': self.request.timestamp,
+            'time': sum(timings.values()),
+            'timings': timings,
             'cache': {},
             'serverIPAddress': self.request.dst_ip,
             '_communityId': self.community_id,

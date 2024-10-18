@@ -61,7 +61,7 @@ class NetworkTrafficDump:
 
     def save_har(
         self, output_file: Path, *, overwrite: bool = False, indent: int = 2, **json_dump_kws: Any
-    ) -> None:
+    ) -> dict[str, Any]:
         """
         Save the network traffic data in HAR format to a file.
 
@@ -70,3 +70,4 @@ class NetworkTrafficDump:
         har_content = self.to_har()  # fail before creating/overwriting file
         with output_file.open('w' if overwrite else 'x') as fp:
             json.dump(har_content, fp, indent=indent, **json_dump_kws)
+        return har_content
