@@ -3,12 +3,12 @@
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Literal, Any
 
 import communityid
 
-from pcapng_utils.har.pirogue_enrichment import HarEnrichment
-from pcapng_utils.har.pirogue_enrichment.utils import prefix_string_camel_case, clean_prefixed_ip_address
+from . import HarEnrichment
+from .utils import prefix_string_camel_case, clean_prefixed_ip_address
 
 logger = logging.getLogger('enrichment')
 
@@ -16,10 +16,11 @@ logger = logging.getLogger('enrichment')
 class Stacktrace(HarEnrichment):
     def __init__(self, har_data: dict, input_data_file: Path):
         super().__init__(har_data, input_data_file)
+        self.socket_traces: list[dict] = []
 
         if self.can_enrich:
             # Preprocess the socket traces: remove unnecessary fields and prefix keys
-            self.socket_traces = self._preprocess_socket_traces(self.input_data, prefix='')
+            self.socket_traces = self._preprocess_socket_traces(self.input_data, prefix='')  # type: ignore
         else:
             logger.warning('HAR enrichment with stacktrace information cannot be performed, skip.')
 
@@ -38,10 +39,10 @@ class Stacktrace(HarEnrichment):
         """Compute and append the Community ID to the given stacktrace"""
         cid = communityid.CommunityID()
         socket_trace_data: dict = socket_trace['data']
-        src_ip = clean_prefixed_ip_address(socket_trace_data.get('localIp'))
-        src_port = socket_trace_data.get('localPort')
-        dst_ip = clean_prefixed_ip_address(socket_trace_data.get('destIp'))
-        dst_port = socket_trace_data.get('destPort')
+        src_ip = clean_prefixed_ip_address(socket_trace_data['localIp'])
+        src_port = socket_trace_data['localPort']
+        dst_ip = clean_prefixed_ip_address(socket_trace_data['destIp'])
+        dst_port = socket_trace_data['destPort']
         # Prepare the Community ID template based on the protocol
         if 'tcp' in socket_trace['data']['socketType']:
             tpl = communityid.FlowTuple.make_tcp(src_ip, dst_ip, src_port, dst_port)
@@ -83,12 +84,12 @@ class Stacktrace(HarEnrichment):
         clean_stack = []
         stack = stack_trace['data']['stack']
         for call in stack:
-            clazz = call.get('class')
+            clazz: str = call['class']
             if clazz not in clean_stack:
                 clean_stack.append(clazz)
         return clean_stack
 
-    def _enrich_entry(self, har_entry: dict, community_id: str, direction: str) -> dict:
+    def _enrich_entry(self, har_entry: dict, community_id: str, direction: Literal['in', 'out']) -> dict:
         """Attack the stacktrace to the given HAR entry (either request or response)"""
         # Fail first
         if direction not in ('in', 'out'):
@@ -133,7 +134,7 @@ class Stacktrace(HarEnrichment):
         processed_stacktrace = self._prefix_keys(stacktrace, prefix=prefix)
         return processed_stacktrace
 
-    def _preprocess_socket_traces(self, socket_traces: list[dict], prefix: str = '') -> list:
+    def _preprocess_socket_traces(self, socket_traces: list[dict], prefix: str = '') -> list[dict]:
         return [
             self._clean_stacktrace_data(socket_trace, prefix)
             for socket_trace in socket_traces
@@ -144,6 +145,6 @@ class Stacktrace(HarEnrichment):
         if not self.can_enrich:
             return
         for har_entry in self.har_data['log']['entries']:
-            community_id = har_entry.get('_communityId')
-            har_entry['request'] = self._enrich_entry(har_entry.get('request'), community_id, direction='out')
-            har_entry['response'] = self._enrich_entry(har_entry.get('response'), community_id, direction='in')
+            community_id = har_entry['_communityId']
+            har_entry['request'] = self._enrich_entry(har_entry['request'], community_id, direction='out')
+            har_entry['response'] = self._enrich_entry(har_entry['response'], community_id, direction='in')

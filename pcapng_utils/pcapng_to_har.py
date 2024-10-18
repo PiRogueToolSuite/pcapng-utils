@@ -6,10 +6,10 @@ from pathlib import Path
 from argparse import ArgumentParser
 from typing import Any
 
-from pcapng_utils.har.pirogue_enrichment.decryption import ContentDecryption
-from pcapng_utils.har.pirogue_enrichment.stacktrace import Stacktrace
-from pcapng_utils.tshark.traffic import NetworkTrafficDump
-from pcapng_utils.tshark.wrapper import Tshark
+from .har.pirogue_enrichment.decryption import ContentDecryption
+from .har.pirogue_enrichment.stacktrace import Stacktrace
+from .tshark.traffic import NetworkTrafficDump
+from .tshark.wrapper import Tshark
 
 DEFAULT_TSHARK_PATH = {
     "Linux": "/usr/bin/tshark",
@@ -115,7 +115,7 @@ def pcapng_to_har(
         se.enrich()
         logger.info(f"The HAR has been enriched with stacktrace data from {socket_operations_file}")
     else:
-        logger.error(f"Invalid stacktrace data input file, skip enrichment")
+        logger.error("Invalid stacktrace data input file, skip enrichment")
 
     # Add content decryption to the HAR
     cryptography_operations_file = Path(cryptography_operations_file) if cryptography_operations_file else None
@@ -125,7 +125,7 @@ def pcapng_to_har(
         de.enrich()
         logger.info(f"The HAR has been enriched with decrypted content from {cryptography_operations_file}")
     else:
-        logger.error(f"Invalid decryption data input file, skip enrichment")
+        logger.error("Invalid decryption data input file, skip enrichment")
 
     # Save the enriched HAR data
     if enriched:
