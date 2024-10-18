@@ -4,9 +4,10 @@
 import base64
 import logging
 from pathlib import Path
+from typing import Literal
 
-from pcapng_utils.har.pirogue_enrichment import HarEnrichment
-from pcapng_utils.har.pirogue_enrichment.utils import base64_to_hex
+from . import HarEnrichment
+from .utils import base64_to_hex
 
 logger = logging.getLogger('enrichment')
 
@@ -14,12 +15,12 @@ logger = logging.getLogger('enrichment')
 class ContentDecryption(HarEnrichment):
     def __init__(self, har_data: dict, input_data_file: Path):
         super().__init__(har_data, input_data_file)
-        self.cryptography_operations: list[dict] = self.input_data
+        self.cryptography_operations: list[dict] = self.input_data  # type: ignore
 
         if not self.can_enrich:
             logger.warning('HAR enrichment with encryption information cannot be performed, skip.')
 
-    def _find_decrypted_data(self, base64_encoded_payload: str, direction: str) -> dict:
+    def _find_decrypted_data(self, base64_encoded_payload: str, direction: Literal['in', 'out']) -> dict:
         """ Find the decrypted data matching the given base64 encoded payload """
         enrichment_data: dict = {}
         best_match: dict = {}
@@ -80,7 +81,7 @@ class ContentDecryption(HarEnrichment):
                 decoded_data = base64.urlsafe_b64encode(decoded_data)
                 encoding = 'base64'
 
-            logger.debug(f'Decrypted content found')
+            logger.debug('Decrypted content found')
 
             enrichment_data = {
                 'pid': operation.get('pid', ''),

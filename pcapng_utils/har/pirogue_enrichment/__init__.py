@@ -1,6 +1,5 @@
 import json
 import logging
-from json import JSONDecodeError
 from pathlib import Path
 
 logger = logging.getLogger('enrichment')
@@ -21,10 +20,9 @@ class HarEnrichment:
             try:
                 self.input_data = json.load(f)
                 self.can_enrich = bool(self.input_data) & bool(self.har_data)
-            except (JSONDecodeError, TypeError, Exception):
+            except Exception:
                 logger.error(f'Invalid input file format: {input_data_file}')
                 self.can_enrich = False
-
 
     def enrich(self):
         raise NotImplementedError()

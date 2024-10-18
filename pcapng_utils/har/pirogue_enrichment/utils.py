@@ -15,6 +15,7 @@ def prefix_string_camel_case(key: str, prefix: str = "_"):
 def clean_prefixed_ip_address(ip_address: str) -> str:
     if ip_address.startswith("::ffff:") and ip_address.count(".") == 3:
         return ip_address.replace("::ffff:", "")
+    return ip_address
 
 
 def base64_to_hex(base64_encoded_data, validate: bool = True) -> str:
