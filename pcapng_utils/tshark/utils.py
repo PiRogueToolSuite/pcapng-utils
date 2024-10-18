@@ -1,12 +1,7 @@
-import base64
 import binascii
-from dataclasses import dataclass
-from hashlib import sha1
-from typing import Sequence, Mapping, Optional, Self, Any
+from typing import Sequence, Mapping, Optional
 
 from .types import DictLayers, TsharkRaw
-
-ALLOWED_NON_PRINTABLE_CHARS = str.maketrans('', '', '\t\n\r')
 
 
 def get_layers_mapping(traffic: Sequence[DictLayers]) -> Mapping[int, DictLayers]:
@@ -28,50 +23,3 @@ def get_tshark_bytes_from_raw(r: Optional[TsharkRaw]) -> bytes:
     hexa = r[0]
     assert isinstance(hexa, str) and hexa.isascii(), hexa
     return binascii.unhexlify(hexa)
-
-
-@dataclass(frozen=True, repr=False)
-class Payload:
-    """Representation of either bytes, possibly representing UTF8 plain-text (useful for HAR export)."""
-
-    bytes_: bytes = b''
-
-    @property
-    def size(self) -> int:
-        return len(self.bytes_)  # <!> len('€') == 1 != len('€'.encode()) == 3
-
-    def __bool__(self) -> bool:
-        return bool(self.bytes_)
-
-    def __repr__(self) -> str:
-        if not self:
-            return "Payload(size=0)"
-        return f"Payload(size={self.size}, sha1={sha1(self.bytes_).hexdigest()})"
-
-    @classmethod
-    def concat(cls, *payloads: Self) -> Self:
-        """Concatenate all payloads in order."""
-        concat_bytes = b''.join(p.bytes_ for p in payloads)  # can't use `sum` here
-        return cls(concat_bytes)
-
-    @classmethod
-    def from_tshark_raw(cls, data: Optional[TsharkRaw]) -> Self:
-        """New payload from special tshark '*_raw' field"""
-        return cls(get_tshark_bytes_from_raw(data))
-
-    def to_har_dict(self) -> dict[str, Any]:
-        """Export with HAR syntax."""
-        try:
-            plain_txt = self.bytes_.decode()
-            assert plain_txt.translate(ALLOWED_NON_PRINTABLE_CHARS).isprintable()
-            return {
-                "size": self.size,
-                "text": plain_txt,
-            }
-        except:
-            pass
-        return {
-            "size": self.size,
-            "text": base64.b64encode(self.bytes_).decode("ascii"),
-            "encoding": "base64",
-        }
