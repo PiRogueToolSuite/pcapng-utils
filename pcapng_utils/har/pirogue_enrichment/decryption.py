@@ -3,7 +3,7 @@
 
 import logging
 from pathlib import Path
-from typing import Literal, Any
+from typing import Literal, ClassVar, Any
 
 from ...payload import Payload
 from . import HarEnrichment
@@ -13,6 +13,9 @@ logger = logging.getLogger('enrichment')
 
 
 class ContentDecryption(HarEnrichment):
+
+    ID: ClassVar = 'decryption'
+
     def __init__(self, har_data: dict, input_data_file: Path) -> None:
         super().__init__(har_data, input_data_file)
         self.cryptography_operations: list[dict] = self.input_data  # type: ignore

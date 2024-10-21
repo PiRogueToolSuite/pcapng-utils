@@ -52,7 +52,7 @@ class NetworkTrafficDump:
                 'creator': {
                     'name': 'PiRogue PCAPNG -> HAR',
                     'version': __version__,
-                    'comment': json.dumps(self.creation_metadata),
+                    '_metadata': self.creation_metadata,
                 },
                 'pages': [],
                 'entries': entries

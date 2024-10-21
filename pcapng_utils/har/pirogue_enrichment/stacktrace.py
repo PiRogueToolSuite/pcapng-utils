@@ -3,7 +3,8 @@
 
 import logging
 from pathlib import Path
-from typing import Set, Literal, Any
+from collections.abc import Set
+from typing import Literal, ClassVar, Any
 
 import communityid
 
@@ -14,6 +15,9 @@ logger = logging.getLogger('enrichment')
 
 
 class Stacktrace(HarEnrichment):
+
+    ID: ClassVar = 'stacktrace'
+
     def __init__(self, har_data: dict, input_data_file: Path) -> None:
         super().__init__(har_data, input_data_file)
         self.socket_traces: list[dict] = []
