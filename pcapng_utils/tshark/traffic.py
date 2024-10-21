@@ -1,5 +1,3 @@
-import json
-from pathlib import Path
 from operator import itemgetter
 from datetime import datetime, timezone
 from typing import Any
@@ -58,16 +56,3 @@ class NetworkTrafficDump:
                 'entries': entries
             }
         }
-
-    def save_har(
-        self, output_file: Path, *, overwrite: bool = False, indent: int = 2, **json_dump_kws: Any
-    ) -> dict[str, Any]:
-        """
-        Save the network traffic data in HAR format to a file.
-
-        :param output_file: the file to save the HAR data to
-        """
-        har_content = self.to_har()  # fail before creating/overwriting file
-        with output_file.open('w' if overwrite else 'x') as fp:
-            json.dump(har_content, fp, indent=indent, **json_dump_kws)
-        return har_content
