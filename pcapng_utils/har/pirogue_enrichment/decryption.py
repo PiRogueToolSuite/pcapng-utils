@@ -3,10 +3,11 @@
 
 import logging
 from pathlib import Path
-from typing import Literal, ClassVar, Any
+from typing import ClassVar, Any
 
-from ...payload import Payload
-from . import HarEnrichment
+from pcapng_utils.payload import Payload
+from .base import HarEnrichment
+from .types import FlowDirection
 from .utils import base64_to_hex
 
 logger = logging.getLogger('enrichment')
@@ -20,10 +21,7 @@ class ContentDecryption(HarEnrichment):
         super().__init__(har_data, input_data_file)
         self.cryptography_operations: list[dict] = self.input_data  # type: ignore
 
-        if not self.can_enrich:
-            logger.warning('HAR enrichment with encryption information cannot be performed, skip.')
-
-    def _find_decrypted_data(self, base64_encoded_payload: str, encrypted_data_parameter_name: Literal['in', 'out']) -> dict:
+    def _find_decrypted_data(self, base64_encoded_payload: str, encrypted_data_parameter_name: FlowDirection) -> dict:
         """ Find the decrypted data matching the given base64 encoded payload """
         best_match: dict = {}
         size_diff: int = 2 ** 31 - 1

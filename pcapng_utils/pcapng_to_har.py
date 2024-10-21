@@ -6,10 +6,8 @@ from pathlib import Path
 from argparse import ArgumentParser
 from typing import Any
 
-from .har.pirogue_enrichment.decryption import ContentDecryption
-from .har.pirogue_enrichment.stacktrace import Stacktrace
-from .tshark.traffic import NetworkTrafficDump
-from .tshark.wrapper import Tshark
+from pcapng_utils.tshark import Tshark, NetworkTrafficDump
+from pcapng_utils.har.pirogue_enrichment import Stacktrace, ContentDecryption
 
 DEFAULT_TSHARK_PATH = {
     "Linux": "/usr/bin/tshark",

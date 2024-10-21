@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
+from operator import itemgetter
 from datetime import datetime, timezone
 from typing import Any
 
+from pcapng_utils import __version__
 from .types import ParsedTrafficProtocol
 from .wrapper import TsharkOutput
 
@@ -40,12 +42,10 @@ class NetworkTrafficDump:
 
         :return: the network traffic data in HAR format
         """
-        from . import __version__
-
         entries = []
         for parsed_traffic in self.parsed_traffic.values():
             entries.extend(parsed_traffic.get_har_entries())
-        entries = sorted(entries, key=lambda x: x['timestamp'])
+        entries = sorted(entries, key=itemgetter('_timestamp'))
         return {
             'log': {
                 'version': '1.2',
