@@ -65,7 +65,7 @@ def cli() -> None:
             tshark=Tshark(args.tshark),
             overwrite=args.force,
             socket_operations_file=args.socket_operations_file,
-            cryptographic_operations_file=args.cryptography_operations_file
+            cryptography_operations_file=args.cryptography_operations_file
         )
     except Exception as e:
         raise RuntimeError(args.i) from e
