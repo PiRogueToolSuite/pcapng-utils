@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from functools import cached_property
 from dataclasses import dataclass
-from typing import Sequence, ClassVar, Any
+from collections.abc import Sequence
+from typing import ClassVar, Any
 
 from ...payload import Payload
 from ..types import HarEntry, DictLayers
-from ..utils import get_layers_mapping, get_tshark_bytes_from_raw
+from ..utils import get_layers_mapping, get_tshark_bytes_from_raw, har_entry_with_common_fields
 
 HTTP_METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'}
 
@@ -31,16 +31,21 @@ class HttpRequestResponse(ABC):
     FALLBACK_CONTENT_TYPE: ClassVar[str] = 'application/octet-stream'
 
     @property
+    def frame_nb(self) -> int:
+        # useful for debugging with Wireshark
+        return int(self.packet['frame']['frame.number'])
+
+    @property
     def community_id(self) -> str:
         return self.packet['communityid']
 
     @property
     def src_host(self) -> str:
-        return self.packet['ip'].get('ip.src_host', '')
+        return self.packet['ip']['ip.src_host']
 
     @property
     def dst_host(self) -> str:
-        return self.packet['ip'].get('ip.dst_host', '')
+        return self.packet['ip']['ip.dst_host']
 
     @property
     def src_ip(self) -> str:
@@ -49,6 +54,14 @@ class HttpRequestResponse(ABC):
     @property
     def dst_ip(self) -> str:
         return self.packet['ip']['ip.dst']
+
+    @property
+    def src_port(self) -> int:
+        return int(self.packet['tcp']['tcp.srcport'])
+
+    @property
+    def dst_port(self) -> int:
+        return int(self.packet['tcp']['tcp.dstport'])
 
     @property
     def http_layer(self) -> dict[str, Any]:
@@ -88,10 +101,6 @@ class HttpRequestResponse(ABC):
     def timestamp(self) -> float:
         return float(self.packet['frame']['frame.time_epoch'])
 
-    @property
-    def started_date(self) -> str:
-        return datetime.fromtimestamp(self.timestamp, timezone.utc).isoformat()
-
     @cached_property
     def headers(self) -> list[dict[str, str]]:
         assert isinstance(self.raw_headers, list), self.raw_headers
@@ -114,14 +123,17 @@ class HttpRequestResponse(ABC):
             'headersSize': self.header_length,
             'bodySize': self.content_length,
             '_timestamp': self.timestamp,
+            '_rawFramesNumbers': [self.frame_nb],  # always 1 frame in HTTP1
             '_communication': {
                 'src': {
                     'ip': self.src_ip,
                     'host': self.src_host,
+                    'port': self.src_port,
                 },
                 'dst': {
                     'ip': self.dst_ip,
                     'host': self.dst_host,
+                    'port': self.dst_port,
                 }
             },
         }
@@ -245,22 +257,18 @@ class HttpConversation:
         Convert the HTTP conversation to HTTP Archive (HAR) format.
         :return: the HTTP conversation (request and response) in HAR format
         """
-        timings = {
-            'send': self.request.sending_duration,
-            'wait': self.waiting_duration,
-            'receive': self.response.receiving_duration
-        }
-        return {
-            'startedDateTime': self.request.started_date,
+        return har_entry_with_common_fields({
             '_timestamp': self.request.timestamp,
-            'time': sum(timings.values()),
-            'timings': timings,
-            'cache': {},
+            'timings': {
+                'send': self.request.sending_duration,
+                'wait': self.waiting_duration,
+                'receive': self.response.receiving_duration
+            },
             'serverIPAddress': self.request.dst_ip,
             '_communityId': self.community_id,
             'request': self.request.to_har(),
             'response': self.response.to_har()
-        }
+        })
 
 
 class Http1Traffic:

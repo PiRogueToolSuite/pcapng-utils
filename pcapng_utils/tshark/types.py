@@ -1,4 +1,5 @@
-from typing import Sequence, Mapping, Protocol, Any
+from collections.abc import Sequence, Mapping
+from typing import Protocol, Any
 
 TsharkRaw = list[str | int]
 DictPacket = Mapping[str, Any]
