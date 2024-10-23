@@ -163,6 +163,7 @@ class Http2RequestResponse:
 
     @cached_property
     def headers_map(self) -> dict[str, str]:
+        # <!> only last header value is taken into account if there are some collisions
         return {
             h['name'].lower(): h['value']
             for h in self.headers

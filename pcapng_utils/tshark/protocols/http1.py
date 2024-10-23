@@ -80,7 +80,10 @@ class HttpRequestResponse(ABC):
     def content_type(self) -> str:
         if not self.payload:
             return ''
-        return self.http_layer.get('http.content_type', self.FALLBACK_CONTENT_TYPE)
+        content_type: str | list[str] = self.http_layer.get('http.content_type', self.FALLBACK_CONTENT_TYPE)
+        if isinstance(content_type, list):
+            content_type = content_type[-1]  # we take last value when multiple values
+        return content_type
 
     @cached_property
     def payload(self) -> Payload:
