@@ -4,7 +4,8 @@ from pathlib import Path
 from hashlib import file_digest
 from functools import cached_property
 from dataclasses import dataclass
-from typing import Sequence, Mapping, Any
+from collections.abc import Sequence, Mapping
+from typing import Any
 
 from .types import DictPacket, DictLayers
 

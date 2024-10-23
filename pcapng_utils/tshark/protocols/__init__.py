@@ -1,4 +1,4 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 from .http1 import Http1Traffic
 from .http2 import Http2Traffic

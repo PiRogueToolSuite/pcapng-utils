@@ -1,10 +1,11 @@
 import warnings
-from datetime import datetime, timezone
 from functools import cached_property
-from typing import Sequence, Mapping, ClassVar, Optional, Any
+from collections.abc import Set, Sequence, Mapping
+from typing import ClassVar, Optional, Any
 
+from ...payload import Payload
 from ..types import HarEntry, DictLayers, NameValueDict
-from ..utils import Payload, get_tshark_bytes_from_raw
+from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
 
 
 class Http2Substream:
@@ -12,7 +13,7 @@ class Http2Substream:
     Class to represent a HTTP2 substream. It contains the layers of the packet and the metadata of the substream.
     Wrap the raw HTTP2 substream and the frame layers to extract the relevant information.
     """
-    KEEP_LAYERS: ClassVar = {'ip', 'frame'}
+    KEEP_LAYERS: ClassVar[Set[str]] = {'ip', 'frame', 'tcp'}
 
     def __init__(self, raw_http2_substream: dict[str, Any], all_layers: DictLayers):
         self.packet_layers: dict[str, Any] = {}
@@ -30,28 +31,33 @@ class Http2Substream:
         return int(self.raw_http2_substream.get('http2.type', -1))
 
     @property
+    def frame_layer(self) -> dict[str, Any]:
+        return self.packet_layers['frame']
+
+    @property
     def timestamp(self) -> float:
-        return float(self.frame_layer.get('frame.time_epoch', 0))
+        return float(self.frame_layer['frame.time_epoch'])
+
+    @property
+    def frame_nb(self) -> int:
+        # useful for debugging with Wireshark
+        return int(self.frame_layer['frame.number'])
+
+    @property
+    def community_id(self) -> str:
+        return self.packet_layers['community_id']
 
     @property
     def ip_layer(self) -> dict[str, Any]:
         return self.packet_layers['ip']
 
     @property
-    def frame_layer(self) -> dict[str, Any]:
-        return self.packet_layers['frame']
-
-    @property
-    def community_id(self) -> str:
-        return self.packet_layers.get('community_id', '')
-
-    @property
     def src_host(self) -> str:
-        return self.ip_layer.get('ip.src_host', '')
+        return self.ip_layer['ip.src_host']
 
     @property
     def dst_host(self) -> str:
-        return self.ip_layer.get('ip.dst_host', '')
+        return self.ip_layer['ip.dst_host']
 
     @property
     def src_ip(self) -> str:
@@ -62,16 +68,16 @@ class Http2Substream:
         return self.ip_layer['ip.dst']
 
     @property
-    def raw_headers(self) -> list[dict[str, Any]]:
-        return self.raw_http2_substream.get('http2.header', [])
+    def src_port(self) -> int:
+        return int(self.packet_layers['tcp']['tcp.srcport'])
 
     @property
-    def started_date(self) -> str:
-        frame_time: str = self.frame_layer['frame.time_epoch']
-        return datetime.fromtimestamp(float(frame_time), timezone.utc).isoformat()
+    def dst_port(self) -> int:
+        return int(self.packet_layers['tcp']['tcp.dstport'])
 
-    def get_time_s(self) -> float:
-        return float(self.frame_layer.get('frame.time_epoch', 0))
+    @property
+    def raw_headers(self) -> list[dict[str, Any]]:
+        return self.raw_http2_substream.get('http2.header', [])
 
 
 class Http2RequestResponse:
@@ -79,14 +85,19 @@ class Http2RequestResponse:
     Base class to represent a HTTP2 request or response. It contains the headers and data of the request or response.
     Implements the common properties of a HTTP2 request or response.
     """
-    FALLBACK_CONTENT_TYPE: ClassVar = 'application/octet-stream'
+    FALLBACK_CONTENT_TYPE: ClassVar[str] = 'application/octet-stream'
 
-    def __init__(self, substreams: list[Http2Substream]):
+    def __init__(self, substreams: Sequence[Http2Substream]):
         self.substreams = substreams
         self.headers, self.data, self.headers_streams, self.data_streams = Http2Helper.get_headers_and_data(substreams)
 
     def __bool__(self) -> bool:
         return bool(self.substreams)
+
+    @property
+    def frames_nbs(self) -> Sequence[int]:
+        # ordered set of frames numbers
+        return list({s.frame_nb: 0 for s in self.substreams})
 
     @property
     def timestamp(self) -> float:
@@ -111,6 +122,14 @@ class Http2RequestResponse:
     @property
     def dst_ip(self) -> str:
         return self.substreams[0].dst_ip
+
+    @property
+    def src_port(self) -> int:
+        return self.substreams[0].src_port
+
+    @property
+    def dst_port(self) -> int:
+        return self.substreams[0].dst_port
 
     @property
     def http_version(self) -> str:
@@ -144,6 +163,7 @@ class Http2RequestResponse:
 
     @cached_property
     def headers_map(self) -> dict[str, str]:
+        # <!> only last header value is taken into account if there are some collisions
         return {
             h['name'].lower(): h['value']
             for h in self.headers
@@ -166,14 +186,14 @@ class Http2RequestResponse:
     def get_duration_ms(self) -> float:
         if not self:
             return -1
-        return round(1000 * (self.substreams[-1].get_time_s() - self.substreams[0].get_time_s()), 2)
+        return round(1000 * (self.substreams[-1].timestamp - self.substreams[0].timestamp), 2)
 
 
 class Http2Request(Http2RequestResponse):
     """
     Class to represent a HTTP2 request. It contains the headers and data of the request.
     """
-    def __init__(self, substreams: list[Http2Substream]):
+    def __init__(self, substreams: Sequence[Http2Substream]):
         assert substreams, "At least one substream expected for a request"
         super().__init__(substreams)
 
@@ -184,7 +204,10 @@ class Http2Request(Http2RequestResponse):
         return next(iter(uris))
 
     def __str__(self):
-        return f'Request: {len(self.headers_streams)}h + {len(self.data_streams)}d substreams\n\tURI: {self.uri}\n\tHeaders: {self.headers_map}\n\tData: {self.data}'
+        return (
+            f"Request [#{','.join(map(str, self.frames_nbs))}]: {len(self.headers_streams)}h + {len(self.data_streams)}d substreams\n\t"
+            f"URI: {self.uri}\n\tHeaders: {self.headers_map}\n\tData: {self.data}"
+        )
 
 
 class Http2Response(Http2RequestResponse):
@@ -194,7 +217,10 @@ class Http2Response(Http2RequestResponse):
     <!> May be empty for convenience (response never received)
     """
     def __str__(self):
-        return f'Response: {len(self.headers_streams)}h + {len(self.data_streams)}d substreams\n\tHeaders: {self.headers_map}\n\tData: {self.data}'
+        return (
+            f"Response [#{','.join(map(str, self.frames_nbs))}]: {len(self.headers_streams)}h + {len(self.data_streams)}d substreams\n\t"
+            f"Headers: {self.headers_map}\n\tData: {self.data}"
+        )
 
 
 class Http2Stream:
@@ -250,7 +276,7 @@ class Http2Stream:
         assert self.request, self.id
         start_stream = self.request.substreams[-1]
         resp_stream = self.response.substreams[0]
-        return round(1000 * (resp_stream.get_time_s() - start_stream.get_time_s()), 2)
+        return round(1000 * (resp_stream.timestamp - start_stream.timestamp), 2)
 
     def har_entry(self) -> Optional[dict[str, Any]]:
         """
@@ -264,21 +290,18 @@ class Http2Stream:
             assert not self.response, self.id
             return None
         first_stream = self.request.headers_streams[0]
-        return {
-            'startedDateTime': first_stream.started_date,
-            'timestamp': first_stream.get_time_s(),
-            'time': self.request.get_duration_ms() + self.waiting_duration + self.response.get_duration_ms(),
+        return har_entry_with_common_fields({
+            '_timestamp': first_stream.timestamp,
             'timings': {
                 'send': self.request.get_duration_ms(),
                 'wait': self.waiting_duration,
                 'receive': self.response.get_duration_ms(),
             },
-            'cache': {},
             'serverIPAddress': first_stream.dst_ip,
             '_communityId': self.community_id,
             'request': Http2Helper.to_har(self.request),
             'response': Http2Helper.to_har(self.response),
-        }
+        })
 
     @staticmethod
     def _get_raw_data_one_substream(raw_http2_substream: Mapping[str, Any]) -> Payload:
@@ -293,13 +316,13 @@ class Http2Stream:
                 assert isinstance(v, dict), (k, v)
                 if 'http2.data.data_raw' not in v:
                     if 'data_raw' in v:  # special case for failed decompression (not observed but as http protocol?!)
-                        return Payload.from_tshark_raw(v['data_raw'])
+                        return Payload(get_tshark_bytes_from_raw(v['data_raw']))
                     # also happens in special case of empty decompressed payload (observed)
                     assert v['http2.data.data'] == '', v
-                return Payload.from_tshark_raw(v.get('http2.data.data_raw'))
+                return Payload(get_tshark_bytes_from_raw(v.get('http2.data.data_raw')))
         if 'http2.body.fragments' in raw_http2_substream:
-            return Payload.from_tshark_raw(raw_http2_substream['http2.body.fragments']['http2.body.reassembled.data_raw'])
-        return Payload.from_tshark_raw(raw_http2_substream.get('http2.data.data_raw'))
+            return Payload(get_tshark_bytes_from_raw(raw_http2_substream['http2.body.fragments']['http2.body.reassembled.data_raw']))
+        return Payload(get_tshark_bytes_from_raw(raw_http2_substream.get('http2.data.data_raw')))
 
     @classmethod
     def get_raw_data(cls, raw_http2_substreams: Sequence[Mapping[str, Any]]) -> Payload:
@@ -318,7 +341,7 @@ class Http2Stream:
             # should be unique and for last data substream (on rare cases: != at end of stream)
             assert len(substreams_reassembled) == 1, substreams_reassembled
             ix_reassembled, substream_reassembled = next(iter(substreams_reassembled.items()))
-            #assert substream_reassembled['http2.flags'] & 0x01, substream_reassembled
+            # assert substream_reassembled['http2.flags'] & 0x01, substream_reassembled
             assert ix_reassembled == len(raw_http2_substreams) - 1, raw_http2_substreams
             return cls._get_raw_data_one_substream(substream_reassembled)
         # 2) if there is none (which happens) we manually concatenate fragments
@@ -403,45 +426,48 @@ class Http2Helper:
         """
         Convert the HTTP2 request or response to a HAR entry.
 
+        <!> Some HTTP2 responses are missing
+
         :param message: the HTTP2 request or response to be converted
         :return: the HAR entry for the HTTP2 request or response
         """
         entry = {
+            '_timestamp': message.timestamp if message else None,
+            '_rawFramesNumbers': message.frames_nbs,
             'httpVersion': message.http_version,
-            'headers': message.headers,
-            'queryString': [],
             'cookies': [],
+            'headers': message.headers,
             'headersSize': message.header_length,
             'bodySize': message.body_length,
-            '_timestamp': message.timestamp,
-            '_communication': {
+        }
+        if message:
+            entry['_communication'] = {
                 'src': {
                     'ip': message.src_ip,
                     'host': message.src_host,
+                    'port': message.src_port,
                 },
                 'dst': {
                     'ip': message.dst_ip,
                     'host': message.dst_host,
+                    'port': message.dst_port,
                 }
-            },
-        }
-        if isinstance(message, Http2Request):
-            entry['method'] = message.http_method
-            entry['url'] = message.uri
-            if message.data.size:
-                entry['postData'] = {
-                    'mimeType': message.content_type,
-                    **message.data.to_har_dict(),
-                    'params': [],
-                }
-        else:
-            entry['status'] = message.http_status
-            entry['statusText'] = ''
-            entry['redirectURL'] = ''
-            entry['content'] = {
-                'mimeType': message.content_type,
-                **message.data.to_har_dict(),
             }
+        if isinstance(message, Http2Request):
+            entry |= {
+                'method': message.http_method,
+                'url': message.uri,
+                'queryString': [],
+            }
+            if message.data.size:
+                message.data.fill_har_request(entry, message.content_type)
+        else:
+            entry |= {
+                'status': message.http_status,
+                'statusText':  '',
+                'redirectURL': '',
+            }
+            message.data.fill_har_response(entry, message.content_type)
         return entry
 
     @staticmethod
@@ -455,7 +481,7 @@ class Http2Helper:
         return Http2Stream.get_raw_data([ss.raw_http2_substream for ss in data_substreams])
 
     @classmethod
-    def get_headers_and_data(cls, substreams: list[Http2Substream]):
+    def get_headers_and_data(cls, substreams: Sequence[Http2Substream]):
         """
         Identify the headers and data substreams and return them.
 
