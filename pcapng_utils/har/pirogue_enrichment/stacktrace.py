@@ -55,8 +55,8 @@ class Stacktrace(HarEnrichment):
 
     KEYS_PREFIX: ClassVar[str] = ''
     TIME_WINDOWS: ClassVar[Mapping[FlowDirection, tuple[float, float]]] = {
-        'out': (-5.0, 0.1),
-        'in':  (-0.1, 5.0),
+        'out': (-5.0, 2.0),
+        'in':  (-2.0, 5.0),
     }
     """
     Tolerances (in seconds) regarding chronology of socket operations compared to network traffic (per flow direction).
