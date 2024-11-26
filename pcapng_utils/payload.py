@@ -42,7 +42,7 @@ class Payload:
         return cls(concat_bytes)
 
     def to_har_dict(self) -> HARPayloadDict:
-        """Serialize content, with HAR formalism (cf. remarks in `fill_har_request`)."""
+        """Serialize content, with HAR formalism (cf. remarks in `update_har_request`)."""
         try:
             plain_txt = self.bytes_.decode()
             assert plain_txt.translate(ALLOWED_NON_PRINTABLE_CHARS).isprintable()
@@ -58,13 +58,20 @@ class Payload:
             "encoding": "base64",
         }
 
-    def fill_har_request(self, request_entry: dict[str, Any], mimetype: str) -> None:
+    def update_har_request(self, request_entry: dict[str, Any], mimetype: str) -> None:
         """Complete entry.request in-place
 
         <!> In specs, `size` & `encoding` are not supported for `postData`,
         so we shall use the `httptoolkit` standard to store non-printable request data,
         in the dedicated `_content` field + `_requestBodyStatus: 'discarded:not-representable'`
+
+        We remove any original request data keys prior to filling with new ones
         """
+        # clean-up request entry first
+        request_entry.pop('postData', None)
+        request_entry.pop('_content', None)
+        request_entry.pop('_requestBodyStatus', None)
+        # fill with new data
         har_payload = self.to_har_dict()
         if 'encoding' in har_payload:
             request_entry['_requestBodyStatus'] = 'discarded:not-representable'
@@ -82,7 +89,7 @@ class Payload:
             }
             del request_entry['postData']['size']
 
-    def fill_har_response(self, response_entry: dict[str, Any], mimetype: str) -> None:
+    def update_har_response(self, response_entry: dict[str, Any], mimetype: str) -> None:
         """Complete entry.response in-place"""
         response_entry['content'] = {
             'mimeType': mimetype,

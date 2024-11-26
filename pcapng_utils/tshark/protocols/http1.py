@@ -185,7 +185,7 @@ class HttpRequest(HttpRequestResponse):
             **self.common_har_props,
         }
         if self.content_length:
-            self.payload.fill_har_request(d, self.content_type)
+            self.payload.update_har_request(d, self.content_type)
         return d
 
     @property
@@ -229,7 +229,7 @@ class HttpResponse(HttpRequestResponse):
             'httpVersion': http_version,
             **self.common_har_props,
         }
-        self.payload.fill_har_response(d, self.content_type)
+        self.payload.update_har_response(d, self.content_type)
         return d
 
     @property

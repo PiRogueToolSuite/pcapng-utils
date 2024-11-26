@@ -460,14 +460,14 @@ class Http2Helper:
                 'queryString': [],
             }
             if message.data.size:
-                message.data.fill_har_request(entry, message.content_type)
+                message.data.update_har_request(entry, message.content_type)
         else:
             entry |= {
                 'status': message.http_status,
                 'statusText':  '',
                 'redirectURL': '',
             }
-            message.data.fill_har_response(entry, message.content_type)
+            message.data.update_har_response(entry, message.content_type)
         return entry
 
     @staticmethod
