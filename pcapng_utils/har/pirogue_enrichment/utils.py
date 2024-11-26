@@ -18,11 +18,6 @@ def clean_prefixed_ip_address(ip_address: str) -> str:
     return ip_address
 
 
-def base64_to_hex(base64_encoded_data: str, *, validate: bool = True) -> str:
-    """Convert a base64 encoded string to a hexadecimal string"""
-    return base64.b64decode(base64_encoded_data, validate=validate).hex()
-
-
 _T = TypeVar('_T', dict, list, str)
 
 
@@ -36,3 +31,19 @@ def keys_to_camel_case(obj: _T, *, prefix: str = '') -> _T:
     if isinstance(obj, list):
         return [keys_to_camel_case(k, prefix=prefix) for k in obj]
     return obj
+
+
+def robust_b64decode(b64_str: str, *, altchars: str | None = None) -> bytes:
+    """Robustly decode some base64 data (standard, URL-safe, fixed width with new lines, without padding, ...)"""
+    if not b64_str:
+        return b""
+    b64 = b64_str.encode("ascii")
+    b64 = b64.replace(b"\n", b"")  # account for fixed-width base64
+    if altchars is None:
+        if b"-" in b64 or b"_" in b64:
+            altchars = "-_"  # URL-safe base64
+        # default with altchars=None is '+/' (standard base64)
+    if not b64.endswith(b"="):
+        padding = b"=" * (-len(b64) % 4)
+        b64 += padding
+    return base64.b64decode(b64, altchars=altchars, validate=True)
