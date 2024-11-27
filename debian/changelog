@@ -1,3 +1,13 @@
+pcapng-utils (1.0.6) bookworm; urgency=medium
+
+  * Robustify content decryption: 
+    - handle encrypted payload that were b64-encoded by senders
+    - skip MAC/Digest/Signature algos
+    - higher bound for abs size diff
+    - account for decrypted data size unless asymmetrical cipher
+
+ -- U+039b <hello@pts-project.org>  Wed, 27 Nov 2024 15:11:28 +0100
+
 pcapng-utils (1.0.5) bookworm; urgency=medium
 
   * Improve the HAR enrichment and adherence to HAR specifications
