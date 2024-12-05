@@ -1,6 +1,12 @@
+pcapng-utils (1.0.7) bookworm; urgency=medium
+
+  * Fix crash when only one HTTP2 header (issue 7)
+
+ -- emaheuxPEREN <contact@peren.gouv.fr>  Thu, 5 Dec 2024 10:22:42 +0100
+
 pcapng-utils (1.0.6) bookworm; urgency=medium
 
-  * Robustify content decryption: 
+  * Robustify content decryption:
     - handle encrypted payload that were b64-encoded by senders
     - skip MAC/Digest/Signature algos
     - higher bound for abs size diff

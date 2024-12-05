@@ -8,7 +8,7 @@ namespaces = false
 
 [project]
 name = "pcapng-utils"
-version = "1.0.6"
+version = "1.0.7"
 description = "A set of Python scripts to manipulate PCAPNG files"
 readme = "README.md"
 license = {text = "GPL-3.0+ AND MIT"}
