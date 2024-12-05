@@ -77,7 +77,11 @@ class Http2Substream:
 
     @property
     def raw_headers(self) -> list[dict[str, Any]]:
-        return self.raw_http2_substream.get('http2.header', [])
+        headers = self.raw_http2_substream.get('http2.header', [])
+        if isinstance(headers, dict):
+            headers = [headers]  # when only 1 header tshark does not wrap it into a list
+        assert isinstance(headers, list), headers
+        return headers
 
 
 class Http2RequestResponse:
@@ -413,12 +417,16 @@ class Http2Helper:
         headers: list[NameValueDict] = []
         for header in substream.raw_headers:
             # cope for non-ASCII headers
-            h_name = get_tshark_bytes_from_raw(header['http2.header.name_raw']).decode()
-            h_value = get_tshark_bytes_from_raw(header.get('http2.header.value_raw')).decode()
-            headers.append({
-                'name': h_name.strip(),
-                'value': h_value.strip(),
-            })
+            try:
+                h_name = get_tshark_bytes_from_raw(header['http2.header.name_raw']).decode()
+                h_value = get_tshark_bytes_from_raw(header.get('http2.header.value_raw')).decode()
+                headers.append({
+                    'name': h_name.strip(),
+                    'value': h_value.strip(),
+                })
+            except Exception as e:
+                e.add_note(f"{header=}")
+                raise
         return headers
 
     @staticmethod
