@@ -41,19 +41,43 @@ class HttpRequestResponse(ABC):
 
     @property
     def src_host(self) -> str:
-        return self.packet['ip']['ip.src_host']
+        try:
+            try:
+                return self.packet['ipv6']['ipv6.src_host']
+            except KeyError:
+                return self.packet['ip']['ip.src_host']
+        except KeyError:
+            return ''
 
     @property
     def dst_host(self) -> str:
-        return self.packet['ip']['ip.dst_host']
+        try:
+            try:
+                return self.packet['ipv6']['ipv6.dst_host']
+            except KeyError:
+                return self.packet['ip']['ip.dst_host']
+        except KeyError:
+            return ''
 
     @property
     def src_ip(self) -> str:
-        return self.packet['ip']['ip.src']
+        try:
+            try:
+                return self.packet['ipv6']['ipv6.src']
+            except KeyError:
+                return self.packet['ip']['ip.src']
+        except KeyError:
+            return ''
 
     @property
     def dst_ip(self) -> str:
-        return self.packet['ip']['ip.dst']
+        try:
+            try:
+                return self.packet['ipv6']['ipv6.dst']
+            except KeyError:
+                return self.packet['ip']['ip.dst']
+        except KeyError:
+            return ''
 
     @property
     def src_port(self) -> int:
