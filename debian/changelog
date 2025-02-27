@@ -1,3 +1,9 @@
+pcapng-utils (1.0.8) bookworm; urgency=medium
+
+  * Support the extraction of IP v6 addresses from HTTP/1 requests
+
+ -- U+039b <hello@pts-project.org>  Thu, 27 Feb 2025 09:55:52 +0100
+
 pcapng-utils (1.0.7) bookworm; urgency=medium
 
   * Fix crash when only one HTTP2 header (issue 7)
