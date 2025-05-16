@@ -13,7 +13,7 @@ class Http2Substream:
     Class to represent a HTTP2 substream. It contains the layers of the packet and the metadata of the substream.
     Wrap the raw HTTP2 substream and the frame layers to extract the relevant information.
     """
-    KEEP_LAYERS: ClassVar[Set[str]] = {'ip', 'frame', 'tcp'}
+    KEEP_LAYERS: ClassVar[Set[str]] = {'frame', 'ip', 'ipv6', 'tcp'}
 
     def __init__(self, raw_http2_substream: dict[str, Any], all_layers: DictLayers):
         self.packet_layers: dict[str, Any] = {}
@@ -47,25 +47,33 @@ class Http2Substream:
     def community_id(self) -> str:
         return self.packet_layers['community_id']
 
-    @property
-    def ip_layer(self) -> dict[str, Any]:
-        return self.packet_layers['ip']
+    @cached_property
+    def ip_version_and_layer(self) -> tuple[str, dict[str, Any]]:
+        ipv4 = "ip" in self.packet_layers
+        ipv6 = "ipv6" in self.packet_layers
+        assert ipv4 ^ ipv6, self
+        ip_version_kw = "ipv6" if ipv6 else "ip"
+        return ip_version_kw, self.packet_layers[ip_version_kw]
 
     @property
     def src_host(self) -> str:
-        return self.ip_layer['ip.src_host']
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.src_host"]
 
     @property
     def dst_host(self) -> str:
-        return self.ip_layer['ip.dst_host']
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.dst_host"]
 
     @property
     def src_ip(self) -> str:
-        return self.ip_layer['ip.src']
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.src"]
 
     @property
     def dst_ip(self) -> str:
-        return self.ip_layer['ip.dst']
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.dst"]
 
     @property
     def src_port(self) -> int:
