@@ -94,7 +94,7 @@ class Tshark:
             '-NdnN',  # name resolution
             '--no-duplicate-keys',  # merge json keys
             '-Y', 'http || http2',  # display filters
-            '-J', 'frame ip tcp http http2',  # do not export data of useless layers
+            '-J', 'frame ip ipv6 tcp http http2',  # do not export data of useless layers
             '--enable-protocol', 'communityid',
         ]
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -39,45 +39,33 @@ class HttpRequestResponse(ABC):
     def community_id(self) -> str:
         return self.packet['communityid']
 
+    @cached_property
+    def ip_version_and_layer(self) -> tuple[str, dict[str, Any]]:
+        ipv4 = "ip" in self.packet
+        ipv6 = "ipv6" in self.packet
+        assert ipv4 ^ ipv6, self
+        ip_version_kw = "ipv6" if ipv6 else "ip"
+        return ip_version_kw, self.packet[ip_version_kw]
+
     @property
     def src_host(self) -> str:
-        try:
-            try:
-                return self.packet['ipv6']['ipv6.src_host']
-            except KeyError:
-                return self.packet['ip']['ip.src_host']
-        except KeyError:
-            return ''
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.src_host"]
 
     @property
     def dst_host(self) -> str:
-        try:
-            try:
-                return self.packet['ipv6']['ipv6.dst_host']
-            except KeyError:
-                return self.packet['ip']['ip.dst_host']
-        except KeyError:
-            return ''
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.dst_host"]
 
     @property
     def src_ip(self) -> str:
-        try:
-            try:
-                return self.packet['ipv6']['ipv6.src']
-            except KeyError:
-                return self.packet['ip']['ip.src']
-        except KeyError:
-            return ''
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.src"]
 
     @property
     def dst_ip(self) -> str:
-        try:
-            try:
-                return self.packet['ipv6']['ipv6.dst']
-            except KeyError:
-                return self.packet['ip']['ip.dst']
-        except KeyError:
-            return ''
+        ipv, ip_layer = self.ip_version_and_layer
+        return ip_layer[f"{ipv}.dst"]
 
     @property
     def src_port(self) -> int:
