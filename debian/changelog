@@ -1,3 +1,11 @@
+pcapng-utils (1.0.9) bookworm; urgency=medium
+
+  * Properly handle IPv6 traffic
+  * Add a flag to save tshark raw JSON output in CLI
+  * Improve README (caveat with HTTP/2 compressed multi-stream data for tshark < 4.2)
+
+ -- emaheuxPEREN <contact@peren.gouv.fr> XXX
+
 pcapng-utils (1.0.8) bookworm; urgency=medium
 
   * Support the extraction of IP v6 addresses from HTTP/1 requests
