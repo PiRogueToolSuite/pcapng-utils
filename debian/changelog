@@ -4,7 +4,7 @@ pcapng-utils (1.0.9) bookworm; urgency=medium
   * Add a flag to save tshark raw JSON output in CLI
   * Improve README (caveat with HTTP/2 compressed multi-stream data for tshark < 4.2)
 
- -- emaheuxPEREN <contact@peren.gouv.fr> XXX
+ -- emaheuxPEREN <contact@peren.gouv.fr> Mon, 19 May 2025 11:42:08 +0200
 
 pcapng-utils (1.0.8) bookworm; urgency=medium
 
