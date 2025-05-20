@@ -8,7 +8,7 @@ namespaces = false
 
 [project]
 name = "pcapng-utils"
-version = "1.0.9"
+version = "1.0.10"
 description = "A set of Python scripts to manipulate PCAPNG files"
 readme = "README.md"
 license = {text = "GPL-3.0+ AND MIT"}
@@ -17,6 +17,7 @@ requires-python = ">= 3.11"
 dependencies = [
   "communityid==1.5.0",
   "sortedcontainers==2.4.0",
+  "tyro==0.*",
 ]
 
 authors = [
@@ -29,7 +30,7 @@ maintainers = [
 ]
 
 [project.scripts]
-pcapng_to_har = "pcapng_utils.pcapng_to_har:cli"
+pcapng_to_har = "pcapng_utils.pcapng_to_har:PcapngToHar.cli"
 
 [project.urls]
 repository = "https://github.com/PiRogueToolSuite/pcapng-utils"
