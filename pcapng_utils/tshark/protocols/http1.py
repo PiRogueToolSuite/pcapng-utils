@@ -260,7 +260,10 @@ class HttpConversation:
     @property
     def community_id(self) -> str:
         cid = self.request.community_id
-        assert cid == self.response.community_id, (cid, self.response.community_id)
+        try:
+            assert cid == self.response.community_id, (cid, self.response.community_id)
+        except KeyError: # buggy/incomplete response may not have `community_id` but OK
+            pass
         return cid
 
     @property
