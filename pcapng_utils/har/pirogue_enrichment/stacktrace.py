@@ -54,16 +54,6 @@ class Stacktrace(HarEnrichment):
     COMMUNITY_ID: ClassVar = communityid.CommunityID()
 
     KEYS_PREFIX: ClassVar[str] = ''
-    TIME_WINDOWS: ClassVar[Mapping[FlowDirection, tuple[float, float]]] = {
-        'out': (-5.0, 2.0),
-        'in':  (-2.0, 5.0),
-    }
-    """
-    Tolerances (in seconds) regarding chronology of socket operations compared to network traffic (per flow direction).
-
-    - For outbound network traffic, the socket operation shall be in the past, or a very very close future,
-    - For inbound network traffic, it is the opposite.
-    """
 
     DO_NOT_EXPORT_STACKTRACE_KEYS: ClassVar = {
         # redundant
@@ -74,10 +64,39 @@ class Stacktrace(HarEnrichment):
         'localPort',
     }
 
-    def __init__(self, har_data: dict, input_data_file: Path) -> None:
+    def __init__(
+        self,
+        har_data: dict,
+        input_data_file: Path,
+        *,
+        systematic_time_shift: float = 0.0,
+        time_window_requests: tuple[float, float] = (-5.0, 2.0),
+        time_window_responses: tuple[float, float] = (-2.0, 5.0),
+    ) -> None:
         super().__init__(har_data, input_data_file)
         self.socket_traces_map: Mapping[tuple[CommunityID, FlowDirection], SortedKeyList] = defaultdict(empty_time_sorted_list_of_stack_traces)
         self.paired_socket_traces: dict[tuple[CommunityID, FlowDirection, int], HAREntryMetadata] = {}
+
+        self.time_windows: dict[FlowDirection, tuple[float, float]] = {
+            'out': time_window_requests,
+            'in':  time_window_responses,
+        }
+        """
+        Tolerances (in seconds) regarding chronology of socket operations compared to network traffic (per flow direction).
+
+        - For outbound network traffic, the socket operation shall be in the past, or a very very close future,
+        - For inbound network traffic, it is the opposite.
+        """
+
+        self.systematic_time_shift = systematic_time_shift
+        """
+        Systematic time shift in seconds between socket operations timestamps vs. network traffic timestamps.
+
+        Indeed socket operations timestamps come from phone date, whereas network traffic timestamps come
+        from Pirogue date, which may be desynchronized.
+
+        Positive means network traffic timestamps (Pirogue) were earlier than socket operations timestamps (phone).
+        """
 
         if self.can_enrich:
             self._preprocess_socket_traces()
@@ -115,7 +134,7 @@ class Stacktrace(HarEnrichment):
         return clean_trace_data  # type: ignore[return-value]
 
     def _preprocess_socket_traces(self) -> None:
-        """Create the mapping of stock traces (by community ID + flow direction) to efficiently attach them afterwards."""
+        """Create the mapping of socket traces (by community ID + flow direction) to efficiently attach them afterwards."""
         assert isinstance(self.input_data, list), type(self.input_data)
         for raw_stack_trace in self.input_data:
             clean_stack_trace = self._get_clean_stacktrace(raw_stack_trace)
@@ -137,13 +156,14 @@ class Stacktrace(HarEnrichment):
         if not matching_traces:
             logger.warning(f'No socket operation has been found for {har}')
             return None
-        if (closest := get_closest_in_window(matching_traces, har.timestamp, self.TIME_WINDOWS[har.direction])) is None:
+        har_timestamp = har.timestamp + self.systematic_time_shift
+        if (closest := get_closest_in_window(matching_traces, har_timestamp, self.time_windows[har.direction])) is None:
             socket_chronology = 'just before' if har.direction == 'out' else 'just after'
             logger.warning(f'No socket operation has been found {socket_chronology} {har}')
             return None
         closest_socket_data: SocketTraceData
         closest_socket_ix, closest_socket_timestamp, closest_socket_data = closest
-        current_delta_sec = har.timestamp - closest_socket_timestamp
+        current_delta_sec = har_timestamp - closest_socket_timestamp
         pairing_key = (har.community_id, har.direction, closest_socket_ix)
         already_paired_har = self.paired_socket_traces.get(pairing_key)
         if already_paired_har is not None:

@@ -71,6 +71,12 @@ If the traffic has been captured on a PiRogue with the command `pirogue-intercep
 pcapng_to_har -i <traffic.pcapng> -o <traffic.har> -sf <socket_trace.json>
 ```
 
+In case there was a systematic time shift between socket operations timestamps vs. network traffic timestamps,
+you may provide the `--time-shift SECONDS` flag to account for it.
+Indeed socket operations timestamps come from phone date, whereas network traffic timestamps come from Pirogue date,
+which may be desynchronized.
+Positive shift means network traffic timestamps (Pirogue) were earlier than socket operations timestamps (phone).
+
 *Note: this enrichment is automatically performed provided that `socket_trace.json` is present in the folder containing your input PCAPNG*
 
 ### Payload Decryption (PiRogue only)
