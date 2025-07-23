@@ -4,7 +4,7 @@ pcapng-utils (1.0.10) bookworm; urgency=medium
   * Fix: some buggy/incomplete response may not have `community_id` but we relax check in this case
   * Nicer and easier to maintain CLI with tyro package
 
- -- emaheuxPEREN <contact@peren.gouv.fr> XXX
+ -- emaheuxPEREN <contact@peren.gouv.fr> Wed, 23 Jul 2025 14:48:05 +0200
 
 pcapng-utils (1.0.9) bookworm; urgency=medium
 
