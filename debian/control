@@ -17,6 +17,7 @@ Architecture: all
 Depends:
  tshark (>= 4.0.0),
  python3-communityid,
+ python3-sortedcontainers,
  ${python3:Depends},
  ${misc:Depends},
 Description: Python-based tool for converting PCAPNG files to HAR files
