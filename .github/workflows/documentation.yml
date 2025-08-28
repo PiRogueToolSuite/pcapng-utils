@@ -1,0 +1,44 @@
+name: Build and publish documentation
+
+on:
+  push:
+    branches:
+      - main
+      - "[0-9]+.[0-9]+.x"
+      - "test-me-*"
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+
+permissions:
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      - name: Install Python dependencies
+        shell: bash
+        run: pip install -r requirements.txt
+      - name: Generate documentation
+        shell: bash
+        run: |
+          sphinx-build -M html docs docs/_build
+      - name: Upload documentation
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs/_build/html
+      - name: Publish documentation on GitHub Pages
+        uses: actions/deploy-pages@v4
+        id: deployment

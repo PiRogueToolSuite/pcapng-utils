@@ -35,3 +35,21 @@ pcapng_to_har = "pcapng_utils.pcapng_to_har:PcapngToHar.cli"
 [project.urls]
 repository = "https://github.com/PiRogueToolSuite/pcapng-utils"
 issues = "https://github.com/PiRogueToolSuite/pcapng-utils/issues"
+
+[dependency-groups]
+docs = [
+  "autoclasstoc>=1.7",
+  "autodoc-pydantic>=2.2",
+  "myst-parser",
+  "sphinx>=8.1.3",
+  "sphinx-autobuild",
+  "sphinx-copybutton",
+  "sphinx-hoverxref>=1.4.2",
+  "sphinx-jsonschema",
+  "sphinx-needs",
+  "sphinx-notfound-page>=1.0.4",
+  "sphinx-pydantic>=0.1.1",
+  "sphinx-rtd-theme",
+  "sphinx-toolbox",
+  "sphinxcontrib-datatemplates>=0.11",
+]

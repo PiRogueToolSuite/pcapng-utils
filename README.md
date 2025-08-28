@@ -1,5 +1,5 @@
 <div align="center">
-<img width="60px" src="https://pts-project.org/android-chrome-512x512.png">
+<img width="60px" src="https://pts-project.org/logos/pcapng-utils/pcapng-utils-logo.png">
 <h1>PCAPNG to HAR Converter</h1>
 <p>
 Python-based tool for converting PCAPNG files to HAR files.

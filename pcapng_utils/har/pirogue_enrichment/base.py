@@ -5,12 +5,11 @@ from hashlib import file_digest
 from pathlib import Path
 from typing import ClassVar, Any
 
-HASH_ALGO = 'sha1'
-ENRICHMENT_KEY = f'enrichment_files_{HASH_ALGO}'
+HASH_ALGO = "sha1"
+ENRICHMENT_KEY = f"enrichment_files_{HASH_ALGO}"
 
 
 class HarEnrichment(ABC):
-
     ID: ClassVar[str]
 
     def __init__(self, har_data: dict, input_data_file: Path) -> None:
@@ -23,23 +22,25 @@ class HarEnrichment(ABC):
         if not self.har_data or input_data_file.resolve().as_posix() == os.devnull:
             return
 
-        with self.input_data_file.open('rb') as f:
+        with self.input_data_file.open("rb") as f:
             self.input_data_hash = file_digest(f, HASH_ALGO).hexdigest()
             f.seek(0)  # reset file stream to the beginning
             try:
                 self.input_data = json.load(f)
                 self.can_enrich = bool(self.input_data)
             except Exception as e:
-                raise ValueError(f'Invalid input file format for {self.ID}: {input_data_file}') from e
+                raise ValueError(
+                    f"Invalid input file format for {self.ID}: {input_data_file}"
+                ) from e
 
     def enrich(self) -> bool:
         """Enrich, in-place, the HAR data with input-data."""
         if not self.can_enrich:
             return False
-        meta: dict = self.har_data['log']['creator']['_metadata']
+        meta: dict = self.har_data["log"]["creator"]["_metadata"]
         meta.setdefault(ENRICHMENT_KEY, {})
         if self.ID in meta[ENRICHMENT_KEY]:
-            raise ValueError(f'{self.ID} enrichment already performed')
+            raise ValueError(f"{self.ID} enrichment already performed")
         assert self.input_data_hash is not None
         meta[ENRICHMENT_KEY][self.ID] = self.input_data_hash
         for entry in self.har_data["log"]["entries"]:

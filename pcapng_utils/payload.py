@@ -4,20 +4,20 @@ from functools import cached_property
 from hashlib import sha1
 from typing import TypedDict, NotRequired, Literal, Self, Any
 
-ALLOWED_NON_PRINTABLE_CHARS = str.maketrans('', '', '\t\n\r')
+ALLOWED_NON_PRINTABLE_CHARS = str.maketrans("", "", "\t\n\r")
 
 
 class HARPayloadDict(TypedDict):
     size: int
     text: str
-    encoding: NotRequired[Literal['base64']]
+    encoding: NotRequired[Literal["base64"]]
 
 
 @dataclass(frozen=True, repr=False)
 class Payload:
     """Representation of either bytes, possibly representing UTF8 plain-text (useful for HAR export)."""
 
-    bytes_: bytes = b''
+    bytes_: bytes = b""
 
     @cached_property
     def size(self) -> int:
@@ -68,30 +68,32 @@ class Payload:
         We remove any original request data keys prior to filling with new ones
         """
         # clean-up request entry first
-        request_entry.pop('postData', None)
-        request_entry.pop('_content', None)
-        request_entry.pop('_requestBodyStatus', None)
+        request_entry.pop("postData", None)
+        request_entry.pop("_content", None)
+        request_entry.pop("_requestBodyStatus", None)
         # fill with new data
         har_payload = self.to_har_dict()
-        if 'encoding' in har_payload:
-            request_entry['_requestBodyStatus'] = 'discarded:not-representable'
-            request_entry['_content'] = {
-                'mimeType': mimetype,  # addition to httptoolkit specs, for consistence
-                **har_payload
+        if "encoding" in har_payload:
+            request_entry["_requestBodyStatus"] = "discarded:not-representable"
+            request_entry["_content"] = {
+                "mimeType": mimetype,  # addition to httptoolkit specs, for consistence
+                **har_payload,
             }
         else:
-            request_entry['postData'] = {
-                'mimeType': mimetype,
-                'params': [],  # mandatory in specs
+            request_entry["postData"] = {
+                "mimeType": mimetype,
+                "params": [],  # mandatory in specs
                 **har_payload,
                 # size is not in specs...
-                '_size': har_payload['size'],
+                "_size": har_payload["size"],
             }
-            del request_entry['postData']['size']
+            del request_entry["postData"]["size"]
 
-    def update_har_response(self, response_entry: dict[str, Any], mimetype: str) -> None:
+    def update_har_response(
+        self, response_entry: dict[str, Any], mimetype: str
+    ) -> None:
         """Complete entry.response in-place"""
-        response_entry['content'] = {
-            'mimeType': mimetype,
+        response_entry["content"] = {
+            "mimeType": mimetype,
             **self.to_har_dict(),
         }

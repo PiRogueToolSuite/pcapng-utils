@@ -4,7 +4,7 @@ from typing import TypeVar, Any
 
 from sortedcontainers import SortedKeyList
 
-_KT = TypeVar('_KT', bound=float)
+_KT = TypeVar("_KT", bound=float)
 
 
 def get_le(lst: SortedKeyList, key: _KT) -> tuple[int, _KT, Any] | None:
@@ -25,7 +25,9 @@ def get_gt(lst: SortedKeyList, key: _KT) -> tuple[int, _KT, Any] | None:
     return ix, lst.key(e), e
 
 
-def get_closest_in_window(lst: SortedKeyList, key: _KT, rel_window: tuple[_KT, _KT]) -> tuple[int, _KT, Any] | None:
+def get_closest_in_window(
+    lst: SortedKeyList, key: _KT, rel_window: tuple[_KT, _KT]
+) -> tuple[int, _KT, Any] | None:
     """Find element with closest key in provided relative window of keys (inclusive)"""
     lb_ix, lb_key, lb_elt = get_le(lst, key) or (None, None, None)
     ub_ix, ub_key, ub_elt = get_gt(lst, key) or (None, None, None)

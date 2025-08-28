@@ -18,10 +18,10 @@ def clean_prefixed_ip_address(ip_address: str) -> str:
     return ip_address
 
 
-_T = TypeVar('_T', dict, list, str)
+_T = TypeVar("_T", dict, list, str)
 
 
-def keys_to_camel_case(obj: _T, *, prefix: str = '') -> _T:
+def keys_to_camel_case(obj: _T, *, prefix: str = "") -> _T:
     """Recursively rename all keys of dictionaries within object with camel case (optionally prefixed)."""
     if isinstance(obj, dict):
         return {
