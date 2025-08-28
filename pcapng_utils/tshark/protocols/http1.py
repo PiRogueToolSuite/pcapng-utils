@@ -296,6 +296,7 @@ class Http1Traffic:
     This class is the entry point for parsing HTTP1 network traffic.
 
     The format of JSON data from tshark is as follows for a single HTTP request:
+
     - `GET /spi/v2/platforms/ HTTP/1.1\\r\\n`: Contains the HTTP method, URI, and version.
     - `http.request.version`: The HTTP version used.
     - `http.request.line`: A list of HTTP headers sent with the request.
@@ -305,6 +306,7 @@ class Http1Traffic:
     - `http.response_in`: The response number associated with this request.
 
     The format of JSON data from tshark is as follows for a single HTTP response:
+
     - `HTTP/1.1 200 OK\\r\\n`: Contains the HTTP version, status code, and status phrase.
     - `http.content_type`: The Content-Type header value.
     - `http.response.line`: A list of HTTP headers sent with the response.
@@ -325,6 +327,7 @@ class Http1Traffic:
         Parse the HTTP network traffic and extract the request-response pairs.
 
         Identify each HTTP request and its associated HTTP response by following these steps:
+
         1. Iterate through packets: It loops through all packets obtained from the `traffic` object.
         2. Check protocols: It checks if the packet contains the `http` protocol by examining the `frame.protocols`
            field.

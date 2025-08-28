@@ -61,7 +61,7 @@ class Payload:
     def update_har_request(self, request_entry: dict[str, Any], mimetype: str) -> None:
         """Complete entry.request in-place
 
-        <!> In specs, `size` & `encoding` are not supported for `postData`,
+        In specs, `size` & `encoding` are not supported for `postData`,
         so we shall use the `httptoolkit` standard to store non-printable request data,
         in the dedicated `_content` field + `_requestBodyStatus: 'discarded:not-representable'`
 

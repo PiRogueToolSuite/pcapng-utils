@@ -35,6 +35,7 @@ class Tshark:
 
     **tshark** is a command-line tool for capturing and analyzing network traffic.
     It is part of the Wireshark suite and provides similar functionality to the Wireshark GUI in a terminal environment.
+
     - Packet capture and analysis: `tshark` can capture live network traffic and analyze packets from capture files (e.g., PCAP, PCAPNG).
     - Protocol decoding: It supports decoding a wide range of network protocols, providing detailed information about each packet.
     - Filtering: `tshark` allows filtering packets using display filters to focus on specific traffic.
@@ -46,6 +47,7 @@ class Tshark:
     This allows for easy parsing and analysis of network traffic data in a structured format.
 
     **Useful commands**:
+
     - Capture live traffic: `tshark -i <interface>`
     - Read from a PCAP file: `tshark -r <file.[pcap|pcapng]>`
     - Display packet details: `tshark -V`

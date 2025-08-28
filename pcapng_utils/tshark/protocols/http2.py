@@ -158,7 +158,8 @@ class Http2RequestResponse:
     @property
     def body_length(self) -> int:
         """
-        <!> This is number of compressed bytes (if any compression)
+        This is number of compressed bytes (if any compression)
+
         - `http2.length` is also populated for header substreams
         - we do NOT always have the `http2.body.fragments` -> `http2.body.reassembled.length`
         """
@@ -239,6 +240,9 @@ class Http2Stream:
     """
     Class to represent an entire HTTP2 stream (multiple substreams). It contains the request and response objects.
     Http2Stream represents a single HTTP2 stream that can contain multiple substreams as follows:
+
+    .. code-block::
+
      +-------------------------------------- (tcp stream, http2 stream)
      | Http2SubStream 1    | Request headers (type: 1)
      | Http2SubStream ...  | Request data (type: 0, flags: 0x0) - partial data
@@ -250,6 +254,7 @@ class Http2Stream:
      | Http2SubStream 7    | Response data (type: 0, flags: 0x1) - end of stream, contains reassembled data
      | (Http2SubStream 8   | Response trailers (type: 1))
      +--------------------------------------
+
      Each HTTP2 stream is uniquely identified by a tuple (tcp stream index, http2 stream index)
      and contains both request and response objects.
     """
@@ -318,10 +323,10 @@ class Http2Stream:
     @staticmethod
     def _get_raw_data_one_substream(raw_http2_substream: Mapping[str, Any]) -> Payload:
         """
-        Notes:
-        - when dealing with a reassembled data substream, `http2.data.data_raw` MAY not contain all data
-        - if the payload was compressed, tshark decompresses ALL data for us(even if data is reassembled)
-        under `Content-encoded entity body ...` -> `http2.data.data_raw` key, so we check it first
+        Note:
+            - when dealing with a reassembled data substream, `http2.data.data_raw` MAY not contain all data
+            - if the payload was compressed, tshark decompresses ALL data for us(even if data is reassembled)
+                under `Content-encoded entity body ...` -> `http2.data.data_raw` key, so we check it first
         """
         for k, v in raw_http2_substream.items():
             if k.lower().startswith('content-encoded entity body '):
@@ -540,7 +545,10 @@ class Http2Traffic:
     Each frame has a specific type and can have associated flags.
 
         **HTTP/2 frame types and flags:**
+
+
         HTTP/2 Frame Types:
+
         - `DATA (0x0)`: carries arbitrary, variable-length sequences of octets associated with a stream.
         - `HEADERS (0x1)`: used to open a stream and carry a header block fragment.
         - `PRIORITY (0x2)`: specifies the sender-advised priority of a stream.
@@ -553,12 +561,13 @@ class Http2Traffic:
         - `CONTINUATION (0x9)`: used to continue a sequence of header block fragments.
 
         HTTP/2 Frame Flags:
+
         - `END_STREAM (0x1)`: indicates that the frame is the last one for the current stream.
         - `END_HEADERS (0x4)`: indicates that the frame contains the entire header block.
         - `PADDED (0x8)`: indicates that the frame contains padding.
         - `PRIORITY (0x20)`: indicates that the frame contains priority information.
 
-        **TCP stream ID and the HTTP/2 stream ID:**
+        **TCP stream ID and the HTTP/2 stream ID**
         The TCP stream ID identifies a unique TCP connection. Each TCP connection is assigned a unique stream ID,
         which is used to track the packets that belong to that connection.
         The HTTP/2 stream ID, within a single TCP connection, multiple HTTP/2 streams can exist. Each HTTP/2 stream is
@@ -580,12 +589,14 @@ class Http2Traffic:
         Each key is a tuple with the TCP stream ID and the HTTP2 stream ID.
 
         Identify each HTTP2 request and its associated HTTP2 response by following these steps:
+
         1. Iterate through packets: it loops through all packets obtained from the `traffic` object.
         2. Extract protocols: for each packet, it extracts the protocols from the `frame.protocols` field.
         3. Check for HTTP2 protocol: it checks if the packet contains the `http2` protocol.
         4. Extract the TCP stream ID: it retrieves the TCP stream ID from the `tcp.stream` field.
         5. Handle HTTP2 layer: it ensures the `http2` layer is a list of HTTP2 stream objects.
         6. Process each HTTP2 stream: for each HTTP2 stream in the `http2` layer:
+
            - extract stream information: it retrieves the stream type and stream ID.
            - filter relevant streams: it ignores streams that are not data (type 0) or headers (type 1).
            - create or update stream pair: it creates a new tuple of `(tcp_stream_id, http2_stream_id)` if it does not
