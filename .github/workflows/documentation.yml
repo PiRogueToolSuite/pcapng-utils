@@ -31,7 +31,9 @@ jobs:
           cache: 'pip'
       - name: Install Python dependencies
         shell: bash
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
       - name: Generate documentation
         shell: bash
         run: |
