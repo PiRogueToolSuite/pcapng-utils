@@ -11,7 +11,8 @@ from .base import HarEnrichment
 from .types import FlowDirection
 from .utils import robust_b64decode
 
-logger = logging.getLogger("enrichment")
+
+logger = logging.getLogger("pcapng_utils.pirogue_enrichment.decryption")
 
 
 class ContentDecryption(HarEnrichment):

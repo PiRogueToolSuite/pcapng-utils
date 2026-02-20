@@ -56,16 +56,27 @@ class PcapngToHar:
     force: Annotated[bool, tyro.conf.arg(aliases=("-f",))] = False
     """Whether to overwrite output if it exists"""
 
-    verbose: Annotated[bool, tyro.conf.arg(aliases=("-v",))] = False
-    """Activate verbose logging"""
+    verbose: Annotated[int, tyro.conf.UseCounterAction, tyro.conf.arg(aliases=("-v",))] = 0
+    """Increase logging verbosity"""
+
+    def configure_logging(self) -> None:
+        third_party_level = max(logging.DEBUG, logging.WARNING - 7 * self.verbose)
+        self_level = max(logging.DEBUG, logging.WARNING - 10 * self.verbose)
+        logging.basicConfig(
+            format="%(asctime)s [%(levelname)s | %(name)s] %(message)s",
+            level=third_party_level,
+        )
+        logging.getLogger("pcapng_utils").setLevel(self_level)
+        logging.getLogger("pcapng_utils.pirogue_enrichment").setLevel(third_party_level + 1)  # too verbose
+        logging.getLogger("communityid").setLevel(max(logging.DEBUG, logging.WARNING - 3 * self.verbose))  # too verbose
 
     @classmethod
     def cli(cls) -> None:
-        cfg = tyro.cli(cls, config=(tyro.conf.FlagCreatePairsOff,))
-        logging.basicConfig(
-            format="%(asctime)s [%(levelname)s | %(name)s] %(message)s",
-            level=logging.DEBUG if cfg.verbose else logging.WARNING,
+        cfg = tyro.cli(
+            cls,
+            config=(tyro.conf.FlagCreatePairsOff, tyro.conf.OmitArgPrefixes, tyro.conf.DisallowNone)
         )
+        cfg.configure_logging()
         cfg.run()
 
     @property
@@ -107,7 +118,7 @@ def pcapng_to_har(
     **json_dump_kws: Any,
 ) -> None:
     """Convert .pcapng file to .har file using tshark"""
-    logger = logging.getLogger("pcapng_to_har")
+    logger = logging.getLogger("pcapng_utils.pcapng_to_har")
     if output_file is None:
         output_file = input_file.with_suffix(".har")
 
@@ -126,7 +137,7 @@ def pcapng_to_har(
 
     # Load & parse the traffic from the PCAPNG file
     tshark_out = tshark.load_traffic(input_file)
-    logger.debug(f"Successfully run tshark: metadata={tshark_out.metadata}")
+    logger.info(f"Successfully run tshark on {input_file} -> metadata={tshark_out.metadata}")
     if output_raw_tshark:
         with output_raw_tshark.open("w" if overwrite else "x") as fp:
             json.dump(tshark_out.list_packets, fp, indent=2, ensure_ascii=False)

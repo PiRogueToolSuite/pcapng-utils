@@ -1,6 +1,7 @@
-communityid==1.5.0
-sortedcontainers==2.4.0
-tyro==0.*
+communityid==1.5.*
+sortedcontainers==2.4.*
+tyro==1.0.*
+# dev
 autoclasstoc>=1.7
 autodoc-pydantic>=2.2
 myst-parser

@@ -17,7 +17,8 @@ from .types import CommunityID, Timestamp, FlowDirection
 from .utils import keys_to_camel_case, clean_prefixed_ip_address
 from .sorted_list import get_closest_in_window
 
-logger = logging.getLogger('enrichment')
+
+logger = logging.getLogger("pcapng_utils.pirogue_enrichment.stacktrace")
 
 
 class SocketTraceData(TypedDict):
