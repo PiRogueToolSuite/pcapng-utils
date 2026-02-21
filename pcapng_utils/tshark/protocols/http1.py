@@ -10,7 +10,7 @@ from ...payload import Payload
 from ..layers import FrameMixin, TCPIPMixin, CommunityIDMixin, get_protocols, get_layers_mapping, get_har_communication
 from ..types import HarEntry, DictLayers
 from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
-from .websocket import WebSocketConversation, WebSocketFrame, is_websocket_conversation
+from .websocket import WebSocketConversation, WebSocketFrames, is_websocket_conversation
 
 
 HTTP_METHODS = {str(v) for v in HTTPMethod}
@@ -255,7 +255,7 @@ class HttpConversation:
                 self.websocket_conversation.to_har()
                 if self.websocket_conversation is not None
                 else {}
-            )
+            ),
         })
 
 
@@ -316,10 +316,10 @@ class Http1Traffic:
             if 'http' not in get_protocols(layers):  # discard non-http traffic
                 continue
             if 'websocket' in layers:
-                ws_frame = WebSocketFrame(layers)
-                ws_convs = websocket_conversations_per_tcp_stream_id[ws_frame.tcp_stream_id]
-                assert ws_convs, (ws_frame.tcp_stream_id, ws_frame)
-                assert ws_convs[-1].append(ws_frame), (ws_frame, ws_convs[-1])
+                ws_frames = WebSocketFrames(layers)
+                ws_convs = websocket_conversations_per_tcp_stream_id[ws_frames.tcp_stream_id]
+                assert ws_convs, (ws_frames.tcp_stream_id, ws_frames)
+                ws_convs[-1].push(ws_frames)
                 continue
             if 'http' not in layers:
                 # happens that both 'http' & 'http2' are in `protocols` but only 'http2' in actual layers
