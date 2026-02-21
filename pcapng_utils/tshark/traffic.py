@@ -51,7 +51,7 @@ class NetworkTrafficDump:
             "log": {
                 "version": "1.2",
                 "creator": {
-                    "name": "PiRogue PCAPNG -> HAR",
+                    "name": "PCAPNG -> HAR",
                     "version": __version__,
                     "_metadata": self.creation_metadata,
                 },

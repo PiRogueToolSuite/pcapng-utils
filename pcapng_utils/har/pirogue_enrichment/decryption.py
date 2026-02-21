@@ -16,7 +16,8 @@ logger = logging.getLogger("pcapng_utils.pirogue_enrichment.decryption")
 
 
 class ContentDecryption(HarEnrichment):
-    ID: ClassVar = "decryption"
+
+    ID: ClassVar = "pirogue_decryption"
 
     MIN_LEN_ENCRYPTED_BYTES: int = (
         8  # at least 16 bytes for AES encrypted data for instance

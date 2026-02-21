@@ -59,7 +59,7 @@ def compute_time_shift_from_pirogue_experiment_metadata(pirogue_dir: Path) -> fl
 
 class Stacktrace(HarEnrichment):
 
-    ID: ClassVar = 'stacktrace'
+    ID: ClassVar = "pirogue_stacktrace"
 
     COMMUNITY_ID: ClassVar = communityid.CommunityID()
 
