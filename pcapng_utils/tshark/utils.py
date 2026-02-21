@@ -2,44 +2,10 @@ import binascii
 import json
 from datetime import datetime, timezone
 from hashlib import sha1
-from collections.abc import Sequence, Mapping
 from typing import Optional, Any
 
-from .types import DictLayers, TsharkRaw
+from .types import TsharkRaw
 
-
-def get_layers_mapping(traffic: Sequence[DictLayers]) -> Mapping[int, DictLayers]:
-    """
-    Get mapping of layers by frame number (once for all).
-    """
-    mapping: dict[int, DictLayers] = {}
-    for layers in traffic:
-        frame_number = int(layers.get("frame", {}).get("frame.number", -1))
-        if frame_number >= 0:
-            assert frame_number not in mapping, frame_number
-            mapping[frame_number] = layers
-    return mapping
-
-
-def get_community_id(layers: DictLayers) -> str:
-    """
-    Get community ID hash from tshark layers (compatible with multiple tshark versions)
-    """
-    POSSIBLE_COMMUNITY_ID_KEYS = ("communityid.hash", "communityid")
-    for k in POSSIBLE_COMMUNITY_ID_KEYS:
-        if k in layers:
-            return layers[k]
-    raise KeyError(f"Community ID not found: {list(layers)}")
-
-def get_timestamp(layers: DictLayers) -> float:
-    """
-    Get frame timestamp (compatible with multiple tshark versions)
-    """
-    epoch = layers['frame']['frame.time_epoch']
-    try:
-        return datetime.fromisoformat(epoch).timestamp()  # new tshark versions
-    except ValueError:
-        return float(epoch)
 
 def get_tshark_bytes_from_raw(r: Optional[TsharkRaw]) -> bytes:
     """

@@ -5,21 +5,24 @@ from typing import ClassVar, Optional, Any
 
 from ...payload import Payload
 from ..types import HarEntry, DictLayers, NameValueDict
-from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields, get_timestamp, get_community_id
+from ..layers import FrameMixin, TCPIPMixin, get_protocols, get_har_communication, get_tcp_stream_id, get_community_id
+from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
 
 
-class Http2Substream:
+class Http2Substream(FrameMixin, TCPIPMixin):
     """
-    Class to represent a HTTP2 substream. It contains the layers of the packet and the metadata of the substream.
-    Wrap the raw HTTP2 substream and the frame layers to extract the relevant information.
+    Class to represent a HTTP2 substream.
+
+    It wraps the raw HTTP2 substream and the parent layers to extract the relevant information.
     """
     KEEP_LAYERS: ClassVar[Set[str]] = {'frame', 'ip', 'ipv6', 'tcp'}
 
-    def __init__(self, raw_http2_substream: dict[str, Any], all_layers: DictLayers):
-        self.packet_layers: dict[str, Any] = {}
-        for layer, data in all_layers.items():
-            if layer in self.KEEP_LAYERS:
-                self.packet_layers[layer] = data
+    def __init__(self, raw_http2_substream: Mapping[str, Any], parent_layers: DictLayers):
+        self.layers: DictLayers = {
+            layer_name: layer_data
+            for layer_name, layer_data in parent_layers.items()
+            if layer_name in self.KEEP_LAYERS
+        }
         self.raw_http2_substream = raw_http2_substream
 
     @property
@@ -29,55 +32,6 @@ class Http2Substream:
     @property
     def http2_type(self) -> int:
         return int(self.raw_http2_substream.get('http2.type', -1))
-
-    @property
-    def frame_layer(self) -> dict[str, Any]:
-        return self.packet_layers['frame']
-
-    @property
-    def timestamp(self) -> float:
-        return get_timestamp(self.packet_layers)
-
-    @property
-    def frame_nb(self) -> int:
-        # useful for debugging with Wireshark
-        return int(self.frame_layer['frame.number'])
-
-    @cached_property
-    def ip_version_and_layer(self) -> tuple[str, dict[str, Any]]:
-        ipv4 = "ip" in self.packet_layers
-        ipv6 = "ipv6" in self.packet_layers
-        assert ipv4 ^ ipv6, self
-        ip_version_kw = "ipv6" if ipv6 else "ip"
-        return ip_version_kw, self.packet_layers[ip_version_kw]
-
-    @property
-    def src_host(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.src_host"]
-
-    @property
-    def dst_host(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.dst_host"]
-
-    @property
-    def src_ip(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.src"]
-
-    @property
-    def dst_ip(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.dst"]
-
-    @property
-    def src_port(self) -> int:
-        return int(self.packet_layers['tcp']['tcp.srcport'])
-
-    @property
-    def dst_port(self) -> int:
-        return int(self.packet_layers['tcp']['tcp.dstport'])
 
     @property
     def raw_headers(self) -> list[dict[str, Any]]:
@@ -269,14 +223,14 @@ class Http2Stream:
     def id(self) -> tuple[int, int]:
         return (self.tcp_stream_id, self.http2_stream_id)
 
-    def append(self, raw_http2_substream: dict[str, Any], all_layers: DictLayers) -> None:
+    def append(self, raw_http2_substream: Mapping[str, Any], parent_layers: DictLayers) -> None:
         """
         Append a new substream to the HTTP2 stream.
 
         :param substream: the substream to be added
-        :param frame: the frame containing the substream. A frame can contain multiple substreams.
+        :param parent_layers: all layers of the frame containing the substream (a frame can contain multiple substreams)
         """
-        self.substreams.append(Http2Substream(raw_http2_substream, all_layers))
+        self.substreams.append(Http2Substream(raw_http2_substream, parent_layers))
 
     @property
     def waiting_duration(self) -> float:
@@ -376,14 +330,14 @@ class Http2Stream:
         src, dst = None, None
         for substream in self.substreams:
             if 'http2.request.full_uri' in substream.raw_http2_substream:  # This is a request
-                src, dst = substream.src_ip, substream.dst_ip
+                src, dst = substream.src_ip_port, substream.dst_ip_port
                 break
         assert src and dst, self.substreams
         assert src != dst, src
 
         # Create the request and response objects with their associated substreams
-        req_substreams = [substream for substream in self.substreams if substream.src_ip == src]
-        resp_substreams = [substream for substream in self.substreams if substream.src_ip == dst]
+        req_substreams = [substream for substream in self.substreams if substream.src_ip_port == src]
+        resp_substreams = [substream for substream in self.substreams if substream.src_ip_port == dst]
         assert len(req_substreams) + len(resp_substreams) == len(self.substreams), self.substreams
         self.request = Http2Request(req_substreams)
         self.response = Http2Response(resp_substreams)  # may be empty
@@ -454,18 +408,7 @@ class Http2Helper:
             'bodySize': message.body_length,
         }
         if message:
-            entry['_communication'] = {
-                'src': {
-                    'ip': message.src_ip,
-                    'host': message.src_host,
-                    'port': message.src_port,
-                },
-                'dst': {
-                    'ip': message.dst_ip,
-                    'host': message.dst_host,
-                    'port': message.dst_port,
-                }
-            }
+            entry['_communication'] = get_har_communication(message)
         if isinstance(message, Http2Request):
             entry |= {
                 'method': message.http_method,
@@ -598,11 +541,10 @@ class Http2Traffic:
         """
         # Assemble the HTTP2 streams
         for layers in self.traffic:
-            protocols = layers['frame']['frame.protocols'].split(':')
             # Ignore non-http2 packets
-            if 'http2' not in protocols:
+            if 'http2' not in get_protocols(layers):
                 continue
-            tcp_stream_id = int(layers['tcp']['tcp.stream'])
+            tcp_stream_id = get_tcp_stream_id(layers)
             community_id = get_community_id(layers)
 
             # HTTP2 layer can be a list of streams or a single stream, force a list

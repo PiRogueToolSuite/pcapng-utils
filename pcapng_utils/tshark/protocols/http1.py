@@ -1,21 +1,18 @@
+from http import HTTPMethod
 from abc import ABC, abstractmethod
 from functools import cached_property
 from dataclasses import dataclass
+from collections import defaultdict
 from collections.abc import Sequence
 from typing import ClassVar, Any
 
 from ...payload import Payload
+from ..layers import FrameMixin, TCPIPMixin, CommunityIDMixin, get_protocols, get_layers_mapping, get_har_communication
 from ..types import HarEntry, DictLayers
-from ..utils import (
-    get_layers_mapping,
-    get_tshark_bytes_from_raw,
-    har_entry_with_common_fields,
-    get_timestamp,
-    get_community_id,
-)
+from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
 
 
-HTTP_METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'}
+HTTP_METHODS = {str(v) for v in HTTPMethod}
 
 
 def _get_raw_headers(http_layer: dict[str, Any], direction: str) -> list[bytes]:
@@ -28,63 +25,18 @@ def _get_raw_headers(http_layer: dict[str, Any], direction: str) -> list[bytes]:
 
 
 @dataclass(frozen=True)
-class HttpRequestResponse(ABC):
+class HttpRequestResponse(ABC, FrameMixin, TCPIPMixin, CommunityIDMixin):
     """
-    Base class for HTTP request and response packets. It wraps the packet data and provides methods to
+    Base class for HTTP request and response packets. It wraps the layers data and provides methods to
     access the relevant information.
     """
-    packet: DictLayers
+    layers: DictLayers
 
     FALLBACK_CONTENT_TYPE: ClassVar[str] = 'application/octet-stream'
 
     @property
-    def frame_nb(self) -> int:
-        # useful for debugging with Wireshark
-        return int(self.packet['frame']['frame.number'])
-
-    @property
-    def community_id(self) -> str:
-        return get_community_id(self.packet)
-
-    @cached_property
-    def ip_version_and_layer(self) -> tuple[str, dict[str, Any]]:
-        ipv4 = "ip" in self.packet
-        ipv6 = "ipv6" in self.packet
-        assert ipv4 ^ ipv6, self
-        ip_version_kw = "ipv6" if ipv6 else "ip"
-        return ip_version_kw, self.packet[ip_version_kw]
-
-    @property
-    def src_host(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.src_host"]
-
-    @property
-    def dst_host(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.dst_host"]
-
-    @property
-    def src_ip(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.src"]
-
-    @property
-    def dst_ip(self) -> str:
-        ipv, ip_layer = self.ip_version_and_layer
-        return ip_layer[f"{ipv}.dst"]
-
-    @property
-    def src_port(self) -> int:
-        return int(self.packet['tcp']['tcp.srcport'])
-
-    @property
-    def dst_port(self) -> int:
-        return int(self.packet['tcp']['tcp.dstport'])
-
-    @property
     def http_layer(self) -> dict[str, Any]:
-        return self.packet['http']
+        return self.layers['http']
 
     @property
     @abstractmethod
@@ -119,10 +71,6 @@ class HttpRequestResponse(ABC):
     def content_length(self) -> int:
         return self.payload.size
 
-    @property
-    def timestamp(self) -> float:
-        return get_timestamp(self.packet)
-
     @cached_property
     def headers(self) -> list[dict[str, str]]:
         assert isinstance(self.raw_headers, list), self.raw_headers
@@ -140,24 +88,13 @@ class HttpRequestResponse(ABC):
     @property
     def common_har_props(self) -> dict[str, Any]:
         return {
-            'cookies': [],
+            'cookies': [],  # TODO?
             'headers': self.headers,
             'headersSize': self.header_length,
             'bodySize': self.content_length,
             '_timestamp': self.timestamp,
             '_rawFramesNumbers': [self.frame_nb],  # always 1 frame in HTTP1
-            '_communication': {
-                'src': {
-                    'ip': self.src_ip,
-                    'host': self.src_host,
-                    'port': self.src_port,
-                },
-                'dst': {
-                    'ip': self.dst_ip,
-                    'host': self.dst_host,
-                    'port': self.dst_port,
-                }
-            },
+            '_communication': get_har_communication(self),
         }
 
 
@@ -188,7 +125,7 @@ class HttpRequest(HttpRequestResponse):
 
     @property
     def sending_duration(self) -> float:
-        return round(1000 * float(self.packet['frame'].get('frame.time_delta', 0)), 2)
+        return round(1000 * float(self.layers['frame'].get('frame.time_delta', 0)), 2)
 
     def to_har(self) -> dict[str, Any]:
         """
@@ -265,11 +202,20 @@ class HttpConversation:
         self.response = HttpResponse(response_layers)
 
     @property
+    def tcp_stream_id(self) -> int:
+        sid = self.request.tcp_stream_id
+        try:
+            assert sid == self.response.tcp_stream_id, (sid, self.response.tcp_stream_id)
+        except KeyError:  # buggy/incomplete response may not have `tcp_stream` but OK
+            pass
+        return sid
+
+    @property
     def community_id(self) -> str:
         cid = self.request.community_id
         try:
             assert cid == self.response.community_id, (cid, self.response.community_id)
-        except KeyError: # buggy/incomplete response may not have `community_id` but OK
+        except KeyError:  # buggy/incomplete response may not have `community_id` but OK
             pass
         return cid
 
@@ -292,7 +238,7 @@ class HttpConversation:
             'serverIPAddress': self.request.dst_ip,
             '_communityId': self.community_id,
             'request': self.request.to_har(),
-            'response': self.response.to_har()
+            'response': self.response.to_har(),
         })
 
 
@@ -338,27 +284,28 @@ class Http1Traffic:
         1. Iterate through packets: It loops through all packets obtained from the `traffic` object.
         2. Check protocols: It checks if the packet contains the `http` protocol by examining the `frame.protocols`
            field.
-        3. Identify http requests: It checks if the packet contains an HTTP request by looking for the `http.request`
-           key in the `http` layer.
+        3. We identify http requests by checking if the packet contains the `http.request`
+        and `http.response_in` keys in the `http` layer.
         4. Find associated response: If the packet is an HTTP request and contains the `http.response_in` key, it
-           retrieves the corresponding response packet using the `get_packet_by_number` method with the response number.
+           retrieves the corresponding response packet using response number and the `layers_mapping`.
         5. Create conversation: It creates an `HttpConversation` object with the request and response packets and
            appends it to the `conversations` list.
         """
         layers_mapping = get_layers_mapping(self.traffic)
 
-        for request_layers in self.traffic:
-            protocols = request_layers['frame']['frame.protocols'].split(':')
-            if 'http' not in protocols or 'http' not in request_layers:
-                # happens that both 'http' & 'http2' are in `protocols`
-                # but only 'http2' is in layers
+        for layers in self.traffic:
+            if 'http' not in get_protocols(layers):  # discard non-http traffic
                 continue
-            http_layer = request_layers['http']
-            if 'http.request' not in http_layer or 'http.response_in' not in http_layer:
+            if 'http' not in layers:
+                # happens that both 'http' & 'http2' are in `protocols` but only 'http2' in actual layers
                 continue
-            # This is a request
-            response_layers = layers_mapping[int(http_layer['http.response_in'])]
-            self.conversations.append(HttpConversation(request_layers, response_layers))
+            # we only retain HTTP requests from now on
+            request_http_layer = layers['http']
+            if 'http.request' not in request_http_layer or 'http.response_in' not in request_http_layer:
+                continue
+            response_layers = layers_mapping[int(request_http_layer['http.response_in'])]
+            http_conversation = HttpConversation(layers, response_layers)
+            self.conversations.append(http_conversation)
 
     def get_har_entries(self) -> list[HarEntry]:
         """
