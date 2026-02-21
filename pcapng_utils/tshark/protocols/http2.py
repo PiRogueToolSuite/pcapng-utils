@@ -5,7 +5,7 @@ from typing import ClassVar, Optional, Any
 
 from ...payload import Payload
 from ..types import HarEntry, DictLayers, NameValueDict
-from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
+from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields, get_timestamp, get_community_id
 
 
 class Http2Substream:
@@ -36,16 +36,12 @@ class Http2Substream:
 
     @property
     def timestamp(self) -> float:
-        return float(self.frame_layer['frame.time_epoch'])
+        return get_timestamp(self.packet_layers)
 
     @property
     def frame_nb(self) -> int:
         # useful for debugging with Wireshark
         return int(self.frame_layer['frame.number'])
-
-    @property
-    def community_id(self) -> str:
-        return self.packet_layers['community_id']
 
     @cached_property
     def ip_version_and_layer(self) -> tuple[str, dict[str, Any]]:
@@ -114,10 +110,6 @@ class Http2RequestResponse:
     @property
     def timestamp(self) -> float:
         return self.substreams[0].timestamp
-
-    @property
-    def community_id(self) -> str:
-        return self.substreams[0].community_id
 
     @property
     def src_host(self) -> str:
@@ -611,7 +603,7 @@ class Http2Traffic:
             if 'http2' not in protocols:
                 continue
             tcp_stream_id = int(layers['tcp']['tcp.stream'])
-            community_id: str = layers['communityid']
+            community_id = get_community_id(layers)
 
             # HTTP2 layer can be a list of streams or a single stream, force a list
             http2_layer: list[dict[str, Any]] = layers['http2']

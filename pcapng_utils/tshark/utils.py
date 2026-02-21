@@ -21,15 +21,38 @@ def get_layers_mapping(traffic: Sequence[DictLayers]) -> Mapping[int, DictLayers
     return mapping
 
 
+def get_community_id(layers: DictLayers) -> str:
+    """
+    Get community ID hash from tshark layers (compatible with multiple tshark versions)
+    """
+    POSSIBLE_COMMUNITY_ID_KEYS = ("communityid.hash", "communityid")
+    for k in POSSIBLE_COMMUNITY_ID_KEYS:
+        if k in layers:
+            return layers[k]
+    raise KeyError(f"Community ID not found: {list(layers)}")
+
+def get_timestamp(layers: DictLayers) -> float:
+    """
+    Get frame timestamp (compatible with multiple tshark versions)
+    """
+    epoch = layers['frame']['frame.time_epoch']
+    try:
+        return datetime.fromisoformat(epoch).timestamp()  # new tshark versions
+    except ValueError:
+        return float(epoch)
+
 def get_tshark_bytes_from_raw(r: Optional[TsharkRaw]) -> bytes:
     """
     Format of '*_raw' fields produced with '-x' flag: [hexa: str, *sizes: int]
+
+    Sizes are 4 integers in tshark old versions and 5 integers in newer (>= v4.6)
     """
     if r is None:
         return b""
-    assert isinstance(r, list) and len(r) == 5, r
+    assert isinstance(r, list) and len(r) in {5, 6}, r
+    assert all(isinstance(i, int) for i in r[1:]), r
     hexa = r[0]
-    assert isinstance(hexa, str) and hexa.isascii(), hexa
+    assert isinstance(hexa, str) and hexa.isascii(), r
     return binascii.unhexlify(hexa)
 
 

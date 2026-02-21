@@ -6,7 +6,14 @@ from typing import ClassVar, Any
 
 from ...payload import Payload
 from ..types import HarEntry, DictLayers
-from ..utils import get_layers_mapping, get_tshark_bytes_from_raw, har_entry_with_common_fields
+from ..utils import (
+    get_layers_mapping,
+    get_tshark_bytes_from_raw,
+    har_entry_with_common_fields,
+    get_timestamp,
+    get_community_id,
+)
+
 
 HTTP_METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'}
 
@@ -37,7 +44,7 @@ class HttpRequestResponse(ABC):
 
     @property
     def community_id(self) -> str:
-        return self.packet['communityid']
+        return get_community_id(self.packet)
 
     @cached_property
     def ip_version_and_layer(self) -> tuple[str, dict[str, Any]]:
@@ -114,7 +121,7 @@ class HttpRequestResponse(ABC):
 
     @property
     def timestamp(self) -> float:
-        return float(self.packet['frame']['frame.time_epoch'])
+        return get_timestamp(self.packet)
 
     @cached_property
     def headers(self) -> list[dict[str, str]]:
