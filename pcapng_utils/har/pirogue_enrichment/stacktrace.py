@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+import json
 from pathlib import Path
 from operator import itemgetter
 from collections import defaultdict
@@ -48,6 +49,14 @@ class HAREntryMetadata:
     is_http2: bool
 
 
+def compute_time_shift_from_pirogue_experiment_metadata(pirogue_dir: Path) -> float | None:
+    experiment_path = pirogue_dir / "experiment.json"
+    if not experiment_path.is_file():
+        return None
+    meta = json.loads(experiment_path.read_text())
+    return (meta["device"]["start_capture_time"] - meta["network"]["start_capture_time"]) / 1000.0  # in seconds
+
+
 class Stacktrace(HarEnrichment):
 
     ID: ClassVar = 'stacktrace'
@@ -70,7 +79,7 @@ class Stacktrace(HarEnrichment):
         har_data: dict,
         input_data_file: Path,
         *,
-        systematic_time_shift: float = 0.0,
+        systematic_time_shift: float | None = None,
         time_window_requests: tuple[float, float] = (-5.0, 2.0),
         time_window_responses: tuple[float, float] = (-2.0, 5.0),
     ) -> None:
@@ -89,7 +98,9 @@ class Stacktrace(HarEnrichment):
         - For inbound network traffic, it is the opposite.
         """
 
-        self.systematic_time_shift = systematic_time_shift
+        if systematic_time_shift is None:
+            systematic_time_shift = compute_time_shift_from_pirogue_experiment_metadata(input_data_file.parent)
+        self.systematic_time_shift = systematic_time_shift or 0.0
         """
         Systematic time shift in seconds between socket operations timestamps vs. network traffic timestamps.
 

@@ -40,10 +40,13 @@ class PcapngToHar:
 
     # Arguments for enriching the HAR data
 
-    time_shift: Annotated[float, tyro.conf.arg(metavar="SECONDS")] = 0.0
+    time_shift: Annotated[float | None, tyro.conf.arg(metavar="SECONDS")] = None
     """
     Systematic time shift in seconds between socket operations timestamps vs. network traffic timestamps.
     Positive means network traffic timestamps (Pirogue date) were earlier than socket operations timestamps (phone date).
+
+    When keeping default and Pirogue INPUT_DIR/experiment.json file is present under same directory than input .pcapng,
+    this time-shift will be deduced from the recorded difference between device and network `start_capture_time`
     """
 
     socket_operations_file: Annotated[Path | None, tyro.conf.arg(aliases=("-sf",), metavar="PATH")] = None
@@ -102,7 +105,7 @@ class PcapngToHar:
                 **json_dump_kws,
             )
         except Exception as e:
-            raise RuntimeError(self.input.resolve()) from e
+            raise RuntimeError(self.input.resolve().as_posix()) from e
 
 
 def pcapng_to_har(
@@ -114,7 +117,7 @@ def pcapng_to_har(
     socket_operations_file: Path | None = None,
     cryptography_operations_file: Path | None = None,
     overwrite: bool = False,
-    systematic_time_shift: float = 0.0,  # for stacktrace enrichment only
+    systematic_time_shift: float | None = None,  # for stacktrace enrichment only
     **json_dump_kws: Any,
 ) -> None:
     """Convert .pcapng file to .har file using tshark"""
