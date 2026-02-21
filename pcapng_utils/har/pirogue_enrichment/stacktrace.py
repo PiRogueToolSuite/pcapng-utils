@@ -181,7 +181,10 @@ class Stacktrace(HarEnrichment):
         if already_paired_har is not None:
             if already_paired_har.timestamp == har.timestamp:
                 # OK: multiple HTTP2 streams in 1 network frame (and thus 1 socket call)
-                assert already_paired_har.is_http2 and har.is_http2, (har, already_paired_har)
+                # It may also VERY RARELY happen in HTTP1 so we do NOT raise
+                assert already_paired_har.is_http2 is har.is_http2, (har, already_paired_har)  # consistent HTTP version
+                if not har.is_http2:
+                    logger.warning(f"{har} getting paired with already paired {already_paired_har}")
             else:
                 # we could raise but this happens in real life...
                 # TODO? find best OVERALL allocations of socket operations instead of FIFO?

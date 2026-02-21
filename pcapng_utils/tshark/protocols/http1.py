@@ -40,7 +40,9 @@ class HttpRequestResponse(ABC, FrameMixin, TCPIPMixin, CommunityIDMixin):
 
     @property
     def http_layer(self) -> dict[str, Any]:
-        return self.layers['http']
+        http_layer = self.layers['http']
+        assert isinstance(http_layer, dict), self
+        return http_layer
 
     @property
     @abstractmethod
@@ -111,6 +113,10 @@ class HttpRequest(HttpRequestResponse):
     def raw_headers(self) -> list[bytes]:
         return _get_raw_headers(self.http_layer, 'request')
 
+    @property
+    def response_frame_nb(self) -> int:
+        return int(self.http_layer['http.response_in'])
+
     @cached_property
     def http_version_method(self) -> tuple[str, str]:
         """
@@ -161,6 +167,10 @@ class HttpResponse(HttpRequestResponse):
     @property
     def raw_headers(self) -> list[bytes]:
         return _get_raw_headers(self.http_layer, 'response')
+
+    @property
+    def request_frame_nb(self) -> int:
+        return int(self.http_layer['http.request_in'])
 
     @cached_property
     def http_version_status_code_message(self) -> tuple[str, int, str]:
@@ -336,32 +346,42 @@ class Http1Traffic:
                 # happens that both 'http' & 'http2' are in `protocols` but only 'http2' in actual layers
                 continue
             # we only retain HTTP requests from now on
-            request_http_layer = layers['http']
-            if 'http.request' not in request_http_layer:
+            request_http_layer: dict[str, Any] | list[dict[str, Any]] = layers['http']
+            if isinstance(request_http_layer, list):  # very rare but may happen (simultaneous requests)
+                assert all('http.request' in req_http_i for req_http_i in request_http_layer), layers
+                requests = [HttpRequest(dict(layers) | {'http': req_http_i}) for req_http_i in request_http_layer]
+            elif 'http.request' not in request_http_layer:
                 continue
-            request = HttpRequest(layers)
-            if 'http.response_in' not in request_http_layer:
-                orphan_requests_per_tcp_stream[request.tcp_stream_id].append(request)
-                continue
-            response_nb = int(request_http_layer['http.response_in'])
-            assert response_nb not in response_nb_blacklist, (request.frame_nb, response_nb)
-            response_nb_blacklist.add(response_nb)
-            http_conversation = HttpConversation(request, HttpResponse(layers_mapping[response_nb]))
-            self.conversations.append(http_conversation)
-            # handle websocket conversations if needed
-            if http_conversation.websocket_conversation is not None:
-                ws_convs_for_cur_tcp_stream = websocket_conversations_per_tcp_stream_id[http_conversation.tcp_stream_id]
-                open_ws_convs_for_cur_tcp_stream = [ws_conv for ws_conv in ws_convs_for_cur_tcp_stream if not ws_conv.is_closed]
-                if open_ws_convs_for_cur_tcp_stream:
-                    raise NotImplementedError(
-                        "There are still some opened WebSocket conversations "
-                        f"for TCP stream #{http_conversation.tcp_stream_id}: {open_ws_convs_for_cur_tcp_stream}"
-                    )
-                ws_convs_for_cur_tcp_stream.append(http_conversation.websocket_conversation)
+            else:
+                requests = [HttpRequest(layers)]
+            for i, request in enumerate(requests):
+                try:
+                    response_nb = request.response_frame_nb
+                except KeyError:
+                    orphan_requests_per_tcp_stream[request.tcp_stream_id].append(request)
+                    continue
+                if response_nb in response_nb_blacklist:
+                    assert i > 0, layers  # tshark may get confused when having multiple http layers in same frame (like us)
+                    LOGGER.warning(f"Ambiguous response #{response_nb} due to multiple HTTP1 requests in same frame #{request.frame_nb}")
+                    orphan_requests_per_tcp_stream[request.tcp_stream_id].append(request)
+                    continue
+                response_nb_blacklist.add(response_nb)
+                http_conversation = HttpConversation(request, HttpResponse(layers_mapping[response_nb]))
+                self.conversations.append(http_conversation)
+                # handle websocket conversations if needed
+                if http_conversation.websocket_conversation is not None:
+                    ws_convs_for_cur_tcp_stream = websocket_conversations_per_tcp_stream_id[http_conversation.tcp_stream_id]
+                    open_ws_convs_for_cur_tcp_stream = [ws_conv for ws_conv in ws_convs_for_cur_tcp_stream if not ws_conv.is_closed]
+                    if open_ws_convs_for_cur_tcp_stream:
+                        raise NotImplementedError(
+                            "There are still some opened WebSocket conversations "
+                            f"for TCP stream #{http_conversation.tcp_stream_id}: {open_ws_convs_for_cur_tcp_stream}"
+                        )
+                    ws_convs_for_cur_tcp_stream.append(http_conversation.websocket_conversation)
 
         # try to match orphan responses with orphan requests (esp. for '206 Partial content' responses)
         for response_nb, response_layers in layers_mapping.items():
-            response_http_layer = response_layers.get('http')
+            response_http_layer = response_layers.get('http')  # NOT a list for responses due to earlier check in requests phase
             if response_nb in response_nb_blacklist or not (response_http_layer and 'http.response' in response_http_layer):
                 continue
             response = HttpResponse(response_layers)
