@@ -89,6 +89,9 @@ class Tshark:
     hosts_file: Path | None = DEFAULT_HOSTS_FILE
     """Hosts file for tshark name resolution - only used when name resolution contains'n'"""
 
+    tcp_reassemble_out_of_order: bool = True
+    """Whether to allow or not to reassemble out-of-order TCP segments"""
+
     timeout: Annotated[float, tyro.conf.arg(metavar='SECONDS')] = 60.0
     """Timeout in seconds for tshark command completion"""
 
@@ -142,6 +145,7 @@ class Tshark:
             '-Y', 'http || http2 || websocket',  # display filters
             '-J', 'frame ip ipv6 tcp http http2 websocket',  # do not export data of useless layers
             '--enable-protocol', 'communityid',
+            '-o', f'tcp.reassemble_out_of_order:{str(self.tcp_reassemble_out_of_order).upper()}',
         ]
 
     def load_traffic(self, pcapng_file: Path) -> TsharkOutput:

@@ -1,3 +1,4 @@
+import logging
 from http import HTTPMethod
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -12,6 +13,8 @@ from ..types import HarEntry, DictLayers
 from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
 from .websocket import WebSocketConversation, WebSocketFrames, is_websocket_conversation
 
+
+LOGGER = logging.getLogger(__name__)
 
 HTTP_METHODS = {str(v) for v in HTTPMethod}
 
@@ -200,15 +203,15 @@ class HttpConversation:
 
     If this HTTP conversation is a websocket handshake then it shall also contain the websocket conversation.
     """
-    def __init__(self, request_layers: DictLayers, response_layers: DictLayers):
-        self.request = HttpRequest(request_layers)
-        self.response = HttpResponse(response_layers)
+    def __init__(self, request: HttpRequest, response: HttpResponse):
+        self.request = request
+        self.response = response
         self.websocket_conversation = (
-            WebSocketConversation(self.request.src_dst_ip_port)
+            WebSocketConversation(request.src_dst_ip_port)
             if is_websocket_conversation(
-                self.request.http_layer,
-                self.response.http_layer,
-                response_code=self.response.http_version_status_code_message[1],
+                request.http_layer,
+                response.http_layer,
+                response_code=response.http_version_status_code_message[1],
             )
             else None
         )
@@ -259,6 +262,11 @@ class HttpConversation:
         })
 
 
+DELTA_MS_ORPHANS_AFTER_PENALTY = 50.0
+DELTA_MS_ORPHANS_WINDOW_WARN = (-250.0, 50.0)
+DELTA_MS_ORPHANS_WINDOW_IGNORE = (-2500.0, 500.0)
+
+
 class Http1Traffic:
     """
     Class to represent HTTP1 network traffic.
@@ -302,19 +310,22 @@ class Http1Traffic:
         2. Check protocols: It checks if the packet contains the `http` protocol by examining the `frame.protocols`
            field.
         3.a. If traffic correspond to websocket, try to bind it to the originating HTTP conversation
-        3.b. Otherwise, we identify http requests by checking if the packet contains the `http.request`
-        and `http.response_in` keys in the `http` layer.
+        3.b. Otherwise, we identify http requests by checking if the packet contains the `http.request`.
         4. Find associated response: If the packet is an HTTP request and contains the `http.response_in` key, it
-           retrieves the corresponding response packet using response number and the `layers_mapping`.
+           retrieves the corresponding response packet using response number and the `layers_mapping`, otherwise
+           it will handle it later with orphan responses logic.
         5. Create conversation: It creates an `HttpConversation` object with the request and response packets and
            appends it to the `conversations` list.
         """
-        layers_mapping = get_layers_mapping(self.traffic)
+        layers_mapping = get_layers_mapping(
+            # discard non-http traffic
+            [layers for layers in self.traffic if 'http' in get_protocols(layers)]
+        )
         websocket_conversations_per_tcp_stream_id = defaultdict[int, list[WebSocketConversation]](list)
+        orphan_requests_per_tcp_stream = defaultdict[int, list[HttpRequest]](list)
+        response_nb_blacklist = set[int]()
 
-        for layers in self.traffic:
-            if 'http' not in get_protocols(layers):  # discard non-http traffic
-                continue
+        for layers in layers_mapping.values():
             if 'websocket' in layers:
                 ws_frames = WebSocketFrames(layers)
                 ws_convs = websocket_conversations_per_tcp_stream_id[ws_frames.tcp_stream_id]
@@ -326,10 +337,16 @@ class Http1Traffic:
                 continue
             # we only retain HTTP requests from now on
             request_http_layer = layers['http']
-            if 'http.request' not in request_http_layer or 'http.response_in' not in request_http_layer:
+            if 'http.request' not in request_http_layer:
                 continue
-            response_layers = layers_mapping[int(request_http_layer['http.response_in'])]
-            http_conversation = HttpConversation(layers, response_layers)
+            request = HttpRequest(layers)
+            if 'http.response_in' not in request_http_layer:
+                orphan_requests_per_tcp_stream[request.tcp_stream_id].append(request)
+                continue
+            response_nb = int(request_http_layer['http.response_in'])
+            assert response_nb not in response_nb_blacklist, (request.frame_nb, response_nb)
+            response_nb_blacklist.add(response_nb)
+            http_conversation = HttpConversation(request, HttpResponse(layers_mapping[response_nb]))
             self.conversations.append(http_conversation)
             # handle websocket conversations if needed
             if http_conversation.websocket_conversation is not None:
@@ -341,6 +358,49 @@ class Http1Traffic:
                         f"for TCP stream #{http_conversation.tcp_stream_id}: {open_ws_convs_for_cur_tcp_stream}"
                     )
                 ws_convs_for_cur_tcp_stream.append(http_conversation.websocket_conversation)
+
+        # try to match orphan responses with orphan requests (esp. for '206 Partial content' responses)
+        for response_nb, response_layers in layers_mapping.items():
+            response_http_layer = response_layers.get('http')
+            if response_nb in response_nb_blacklist or not (response_http_layer and 'http.response' in response_http_layer):
+                continue
+            response = HttpResponse(response_layers)
+            existing_orphan_requests = orphan_requests_per_tcp_stream.get(response.tcp_stream_id, [])
+            possible_requests = sorted([
+                (req_ix, req.frame_nb, delta_ms)
+                for req_ix, req in enumerate(existing_orphan_requests)
+                if DELTA_MS_ORPHANS_WINDOW_IGNORE[0] < (delta_ms := (req.timestamp - response.timestamp) * 1000) < DELTA_MS_ORPHANS_WINDOW_IGNORE[1]
+            ], key=lambda tup: abs(tup[-1]) + DELTA_MS_ORPHANS_AFTER_PENALTY*(0 if tup[-1] <= 0 else 1))
+            _, resp_status_code, _ = response.http_version_status_code_message
+            resp_lbl = f"HTTP1 response (Frame #{response_nb}, TCP stream #{response.tcp_stream_id}, Code {resp_status_code})"
+            if not possible_requests:
+                # TODO? totally skip pairing for 1xx responses?
+                (LOGGER.info if resp_status_code in {100, 102} else LOGGER.warning)(
+                    f"Orphan {resp_lbl} did not match with any orphan HTTP1 request"
+                )
+                continue
+            if len(possible_requests) > 1:
+                LOGGER.debug(
+                    f"Ambiguous matching of orphan {resp_lbl} with possible orphan requests {[f'#{req_nb}' for _, req_nb, _ in possible_requests]}"
+                )
+            req_ix, req_nb, delta_ms = possible_requests[0]  # first is best (sorted)
+            request = existing_orphan_requests.pop(req_ix)  # this request is not orphan anymore
+            if not (DELTA_MS_ORPHANS_WINDOW_WARN[0] < delta_ms < DELTA_MS_ORPHANS_WINDOW_WARN[1]):
+                LOGGER.warning(f"Dubious matching of orphan {resp_lbl} with orphan request #{req_nb}")
+
+            http_conv = HttpConversation(request, response)
+            self.conversations.append(http_conv)
+
+        # log any orphan requests remaining
+        for tcp_stream_id, orphan_requests_for_tcp_stream in orphan_requests_per_tcp_stream.items():
+            if orphan_requests_for_tcp_stream:
+                reqs_lbls = [
+                    f"Frame #{req.frame_nb}: {' '.join(req.http_version_method)} {req.uri}"
+                    for req in orphan_requests_for_tcp_stream
+                ]
+                LOGGER.warning(
+                    f"TCP stream #{tcp_stream_id}: some orphan HTTP1 requests remain: {reqs_lbls}"
+                )
 
     def get_har_entries(self) -> list[HarEntry]:
         """
