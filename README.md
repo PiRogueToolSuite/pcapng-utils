@@ -19,7 +19,7 @@ License: GPLv3 and MIT
 
 ## Overview
 This project is a Python-based tool for converting PCAPNG files to HAR files.
-It supports both HTTP/1.1 and HTTP/2 protocols, **but not HTTP/3**.
+It supports HTTP/1.1, HTTP/2 and WebSocket protocols, **but not HTTP/3**.
 
 ## Requirements
 This converter requires a PCAPNG file as input. If you have a PCAP file, you can convert it to PCAPNG using `editcap`:

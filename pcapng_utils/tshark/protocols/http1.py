@@ -10,6 +10,7 @@ from ...payload import Payload
 from ..layers import FrameMixin, TCPIPMixin, CommunityIDMixin, get_protocols, get_layers_mapping, get_har_communication
 from ..types import HarEntry, DictLayers
 from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
+from .websocket import WebSocketConversation, WebSocketFrame, is_websocket_conversation
 
 
 HTTP_METHODS = {str(v) for v in HTTPMethod}
@@ -196,10 +197,21 @@ class HttpResponse(HttpRequestResponse):
 class HttpConversation:
     """
     Class to represent an HTTP conversation composed of a request and a response.
+
+    If this HTTP conversation is a websocket handshake then it shall also contain the websocket conversation.
     """
     def __init__(self, request_layers: DictLayers, response_layers: DictLayers):
         self.request = HttpRequest(request_layers)
         self.response = HttpResponse(response_layers)
+        self.websocket_conversation = (
+            WebSocketConversation(self.request.src_dst_ip_port)
+            if is_websocket_conversation(
+                self.request.http_layer,
+                self.response.http_layer,
+                response_code=self.response.http_version_status_code_message[1],
+            )
+            else None
+        )
 
     @property
     def tcp_stream_id(self) -> int:
@@ -239,6 +251,11 @@ class HttpConversation:
             '_communityId': self.community_id,
             'request': self.request.to_har(),
             'response': self.response.to_har(),
+            **(
+                self.websocket_conversation.to_har()
+                if self.websocket_conversation is not None
+                else {}
+            )
         })
 
 
@@ -284,7 +301,8 @@ class Http1Traffic:
         1. Iterate through packets: It loops through all packets obtained from the `traffic` object.
         2. Check protocols: It checks if the packet contains the `http` protocol by examining the `frame.protocols`
            field.
-        3. We identify http requests by checking if the packet contains the `http.request`
+        3.a. If traffic correspond to websocket, try to bind it to the originating HTTP conversation
+        3.b. Otherwise, we identify http requests by checking if the packet contains the `http.request`
         and `http.response_in` keys in the `http` layer.
         4. Find associated response: If the packet is an HTTP request and contains the `http.response_in` key, it
            retrieves the corresponding response packet using response number and the `layers_mapping`.
@@ -292,9 +310,16 @@ class Http1Traffic:
            appends it to the `conversations` list.
         """
         layers_mapping = get_layers_mapping(self.traffic)
+        websocket_conversations_per_tcp_stream_id = defaultdict[int, list[WebSocketConversation]](list)
 
         for layers in self.traffic:
             if 'http' not in get_protocols(layers):  # discard non-http traffic
+                continue
+            if 'websocket' in layers:
+                ws_frame = WebSocketFrame(layers)
+                ws_convs = websocket_conversations_per_tcp_stream_id[ws_frame.tcp_stream_id]
+                assert ws_convs, (ws_frame.tcp_stream_id, ws_frame)
+                assert ws_convs[-1].append(ws_frame), (ws_frame, ws_convs[-1])
                 continue
             if 'http' not in layers:
                 # happens that both 'http' & 'http2' are in `protocols` but only 'http2' in actual layers
@@ -306,6 +331,16 @@ class Http1Traffic:
             response_layers = layers_mapping[int(request_http_layer['http.response_in'])]
             http_conversation = HttpConversation(layers, response_layers)
             self.conversations.append(http_conversation)
+            # handle websocket conversations if needed
+            if http_conversation.websocket_conversation is not None:
+                ws_convs_for_cur_tcp_stream = websocket_conversations_per_tcp_stream_id[http_conversation.tcp_stream_id]
+                open_ws_convs_for_cur_tcp_stream = [ws_conv for ws_conv in ws_convs_for_cur_tcp_stream if not ws_conv.is_closed]
+                if open_ws_convs_for_cur_tcp_stream:
+                    raise NotImplementedError(
+                        "There are still some opened WebSocket conversations "
+                        f"for TCP stream #{http_conversation.tcp_stream_id}: {open_ws_convs_for_cur_tcp_stream}"
+                    )
+                ws_convs_for_cur_tcp_stream.append(http_conversation.websocket_conversation)
 
     def get_har_entries(self) -> list[HarEntry]:
         """

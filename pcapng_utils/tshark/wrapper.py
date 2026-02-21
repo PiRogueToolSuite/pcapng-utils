@@ -139,8 +139,8 @@ class Tshark:
             '-T', 'json',
             '--no-duplicate-keys',  # merge json keys
             *name_resolution_flags,
-            '-Y', 'http || http2',  # display filters
-            '-J', 'frame ip ipv6 tcp http http2',  # do not export data of useless layers
+            '-Y', 'http || http2 || websocket',  # display filters
+            '-J', 'frame ip ipv6 tcp http http2 websocket',  # do not export data of useless layers
             '--enable-protocol', 'communityid',
         ]
 
