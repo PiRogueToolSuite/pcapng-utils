@@ -11,7 +11,7 @@ from ...payload import Payload
 from ..layers import FrameMixin, TCPIPMixin, CommunityIDMixin, get_protocols, get_layers_mapping, get_har_communication
 from ..types import HarEntry, DictLayers
 from ..utils import get_tshark_bytes_from_raw, har_entry_with_common_fields
-from .websocket import WebSocketConversation, WebSocketFrames, is_websocket_conversation
+from .websocket import WebSocketConversation, WebSocketMessagesInNetworkFramePossiblyIncomplete, is_websocket_conversation
 
 
 LOGGER = logging.getLogger(__name__)
@@ -337,7 +337,7 @@ class Http1Traffic:
 
         for layers in layers_mapping.values():
             if 'websocket' in layers:
-                ws_frames = WebSocketFrames(layers)
+                ws_frames = WebSocketMessagesInNetworkFramePossiblyIncomplete(layers)  # type: ignore[arg-type]
                 ws_convs = websocket_conversations_per_tcp_stream_id[ws_frames.tcp_stream_id]
                 assert ws_convs, (ws_frames.tcp_stream_id, ws_frames)
                 ws_convs[-1].push(ws_frames)
