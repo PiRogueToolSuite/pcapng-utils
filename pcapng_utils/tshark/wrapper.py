@@ -89,6 +89,12 @@ class Tshark:
     hosts_file: Path | None = DEFAULT_HOSTS_FILE
     """Hosts file for tshark name resolution - only used when name resolution contains'n'"""
 
+    display_filter: Annotated[str, tyro.conf.arg(aliases=['-Y'])] = "http || http2 || websocket"
+    """Display filter (documented in tshark manual under -Y flag)"""
+
+    protocol_match_filter: Annotated[str, tyro.conf.arg(aliases=['-J'])] = "http http2 websocket"
+    """Protocol match filter (documented in tshark manual under -J flag), in addition to base protocols"""
+
     tcp_reassemble_out_of_order: bool = True
     """Whether to allow or not to reassemble out-of-order TCP segments"""
 
@@ -142,8 +148,8 @@ class Tshark:
             '-T', 'json',
             '--no-duplicate-keys',  # merge json keys
             *name_resolution_flags,
-            '-Y', 'http || http2 || websocket',  # display filters
-            '-J', 'frame ip ipv6 tcp http http2 websocket',  # do not export data of useless layers
+            '-Y', self.display_filter,
+            '-J', f'frame ip ipv6 tcp {self.protocol_match_filter}',  # do not export data of useless layers
             '--enable-protocol', 'communityid',
             '-o', f'tcp.reassemble_out_of_order:{str(self.tcp_reassemble_out_of_order).upper()}',
         ]
