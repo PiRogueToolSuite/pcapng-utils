@@ -9,13 +9,14 @@ namespaces = false
 [project]
 name = "pcapng-utils"
 version = "1.1.0"
-description = "A set of Python scripts to manipulate PCAPNG files"
+description = "PCAPNG-to-HAR conversion with masked PII detection reports"
 readme = "README.md"
 license = {text = "GPL-3.0+ AND MIT"}
 
 requires-python = ">= 3.11"
 dependencies = [
   "communityid==1.5.*",
+  "presidio-analyzer>=2.2.363,<3.0",
   "sortedcontainers==2.4.*",
   "tyro==1.0.*",
 ]
@@ -29,13 +30,21 @@ maintainers = [
   {name = "U+039b", email = "hello@pts-project.org"}
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<9",
+]
+
 [project.scripts]
 pcapng_to_har = "pcapng_utils.pcapng_to_har:PcapngToHar.cli"
 dump_tshark_layers_as_json = "pcapng_utils.tshark.wrapper:cli_dump_tshark_layers_as_json"
+scan_har_pii = "pcapng_utils.pii.cli:main"
+scan_pcapng_pii = "pcapng_utils.pii.pipeline_cli:main"
 
 [project.urls]
-repository = "https://github.com/PiRogueToolSuite/pcapng-utils"
-issues = "https://github.com/PiRogueToolSuite/pcapng-utils/issues"
+repository = "https://github.com/zxtssg/pcapng-utils-pii"
+issues = "https://github.com/zxtssg/pcapng-utils-pii/issues"
+upstream = "https://github.com/PiRogueToolSuite/pcapng-utils"
 
 [dependency-groups]
 docs = [

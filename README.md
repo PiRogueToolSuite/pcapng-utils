@@ -17,6 +17,59 @@ License: GPLv3 and MIT
 </p>
 </div>
 
+## NetPII Scanner extension (this fork)
+
+This fork adds a privacy-analysis stage after PCAPNG-to-HAR conversion. The first
+development milestone scans decoded HAR application fields and produces a JSON
+report for:
+
+- mainland China mobile phone numbers;
+- email addresses;
+- 18-digit Chinese resident ID numbers with birth-date and checksum validation.
+
+The report records where each finding occurred, its entity type, confidence and
+severity. Matched values are masked, so the report does not duplicate raw PII
+from the captured traffic.
+
+Install this fork in a dedicated Python environment:
+
+```shell
+pip install -e ".[test]"
+```
+
+The recommended second-milestone command runs conversion and scanning in one
+step. Its intermediate HAR is temporary and automatically removed:
+
+```shell
+scan_pcapng_pii -i <traffic.pcapng> -o <traffic.pii.json> -c <tshark-command>
+```
+
+On this project's Windows development machine, for example:
+
+```shell
+scan_pcapng_pii -i capture.pcapng -o capture.pii.json -c E:/Wireshark/tshark.exe
+```
+
+Use `--har-output <traffic.har>` only when you intentionally want to retain the
+intermediate HAR. Existing outputs are protected; pass `--force` to replace
+them.
+
+The two individual stages remain available:
+
+```shell
+pcapng_to_har -i <traffic.pcapng> -o <traffic.har>
+scan_har_pii -i <traffic.har> -o <traffic.pii.json>
+```
+
+Reports include both occurrence totals (`finding_count`, `by_entity`) and
+de-duplicated value totals (`unique_finding_count`, `unique_by_entity`). The
+internal fingerprints used for de-duplication are never serialized.
+
+This milestone deliberately uses deterministic Presidio pattern recognizers and
+does not yet identify context-dependent entities such as personal names or street
+addresses. Only analyze traffic that you are authorized to capture, and keep raw
+PCAPNG/HAR files out of the repository.
+
 ## Overview
 This project is a Python-based tool for converting PCAPNG files to HAR files.
 It supports HTTP/1.1, HTTP/2 and WebSocket protocols, **but not HTTP/3**.

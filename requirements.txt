@@ -1,7 +1,9 @@
 communityid==1.5.*
+presidio-analyzer>=2.2.363,<3.0
 sortedcontainers==2.4.*
 tyro==1.0.*
 # dev
+pytest>=8,<9
 autoclasstoc>=1.7
 autodoc-pydantic>=2.2
 myst-parser
